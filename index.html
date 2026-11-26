@@ -108,6 +108,7 @@ h3{margin:12px 0 8px;color:#cfd8ff;font-size:14px;letter-spacing:.06em;text-tran
 .help td{padding:4px 10px;font-size:14px}
 .help td:first-child{text-align:right;white-space:nowrap}
 body.building #res{bottom:150px} body.building #keys{display:none} body.building #action{bottom:150px}
+#netchip{top:122px;left:190px;background:rgba(14,20,40,.78);border:1px solid #5ae070;border-radius:12px;padding:8px 12px;font-weight:700;font-size:14px;color:#bfffcf}
 #fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .6s}
 #fade.on{opacity:1}
 #bigmap{display:block;margin:0 auto;border-radius:12px;background:#0a1028}
@@ -120,6 +121,7 @@ body.building #res{bottom:150px} body.building #keys{display:none} body.building
   <div id="stats"><div class="row"><span id="lvl">Lv 1</span><span id="coins">🪙 0</span></div>
     <div class="bar hp"><div id="hpfill"></div><span id="hptext"></span></div><div class="bar xp"><div id="xpfill"></div></div><div id="gear"></div></div>
   <div id="clock"></div>
+  <div id="netchip" class="hidden"></div>
   <div id="mapwrap"><div style="position:relative"><canvas id="minimap" width="200" height="200" title="Scroll to zoom · double-click to reset"></canvas><div id="minizoom" class="hidden" style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(14,20,40,.9);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700">Zoom</div></div><div id="islname"></div></div>
   <div id="tracker"></div>
   <div id="hint" class="hidden"></div>
@@ -128,7 +130,7 @@ body.building #res{bottom:150px} body.building #keys{display:none} body.building
   <div id="action" class="hidden"></div>
   <div id="buildinfo" class="hidden"></div>
   <div id="buildbar" class="hidden"></div>
-  <div id="keys"><kbd>C</kbd> Craft <kbd>B</kbd> Build <kbd>I</kbd> Bag <kbd>J</kbd> Quests <kbd>M</kbd> Map <kbd>L</kbd> Journal <kbd>Esc</kbd> Menu</div>
+  <div id="keys"><kbd>C</kbd> Craft <kbd>B</kbd> Build <kbd>I</kbd> Bag <kbd>J</kbd> Quests <kbd>M</kbd> Map <kbd>L</kbd> Journal <kbd>O</kbd> Friends <kbd>Esc</kbd> Menu</div>
   <div id="bossbar" class="hidden"><div id="bossname">THE TEMPEST WARLORD</div><div class="bar"><div id="bossfill"></div></div></div>
 </div>
 <div id="panel" class="hidden"><div class="phead"><span id="ptitle"></span><button id="pclose">✕</button></div><div id="ptabs"></div><div id="pbody"></div></div>
@@ -783,6 +785,8 @@ function drawTileInto(g,x,y,ox,oy){
   // texture
   if(t===T.WATER){
     g.strokeStyle='rgba(255,255,255,.35)'; g.lineWidth=1.5; g.beginPath(); g.moveTo(tx-10+h*8,ty+14); g.lineTo(tx+2+h*8,ty+14); g.stroke();
+  } else if(t===T.CASTLE){
+    g.strokeStyle='rgba(90,84,74,.35)'; g.lineWidth=1; g.beginPath(); g.moveTo((top[0]+lf[0])/2,(top[1]+lf[1])/2); g.lineTo((rt[0]+bt[0])/2,(rt[1]+bt[1])/2); g.moveTo((top[0]+rt[0])/2,(top[1]+rt[1])/2); g.lineTo((lf[0]+bt[0])/2,(lf[1]+bt[1])/2); g.stroke();
   } else if(t===T.PATH){
     for(let k=0;k<3;k++){const a=hash2(x*3+k,y*5),b=hash2(x*5+k,y*3);ell(g,tx+(a-.5)*36,ty+HH+(b-.5)*16,2.2,1.2,'rgba(90,60,30,.35)');}
   } else {
@@ -878,7 +882,7 @@ function render(){
   for(const e of enemies) if(e.x>vb.x0-2&&e.x<vb.x1+2&&e.y>vb.y0-2&&e.y<vb.y1+2) drawables.push({d:e.x+e.y,k:4,o:e});
   if(P.alive) drawables.push({d:P.x+P.y,k:6,o:P});
   for(const p of projectiles) drawables.push({d:p.x+p.y,k:7,o:p});
-  extraDrawables(drawables,vb);
+  extraDrawables(drawables,vb); netDrawables(drawables,vb);
   drawables.sort((a,b)=>a.d-b.d);
   for(const dr of drawables){
     switch(dr.k){case 1:drawStruct(dr.o);break;case 2:drawDeco(dr.o);break;case 3:drawNPC(dr.o);break;case 4:drawEnemy(dr.o);break;case 5:drawPickup(dr.o);break;case 6:drawPlayer();break;case 7:drawProjectile(dr.o);break;case 8:dr.f();break;}
@@ -892,9 +896,11 @@ function render(){
   for(const m of meteors) drawMeteor(m);
   // overlays above light
   for(const n of npcs) drawNPCLabel(n);
+  netLabels();
   for(const e of enemies) if(e.hp<e.maxHp||e.chief) drawEnemyBar(e);
   for(const c of camps) if(!c.cleared&&dist(c.x,c.y,P.x,P.y)<16) drawTotemBar(c.totem);
   drawTexts();
+  drawCastleGhostMsg();
   ctx.restore();
   drawQuestArrow();
   if(flashRed>0){ ctx.fillStyle=`rgba(200,20,20,${flashRed*.35})`; ctx.fillRect(0,0,VW,VH); }
@@ -989,6 +995,7 @@ function hpBarAt(x,y,w,frac,col){ ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(x
 function drawStruct(s){
   const g=ctx; const [cx,cy]=S(s.x+s.w/2,s.y+s.h/2);
   if(s.type==='shrine'){ drawShrine(s,cx,cy); return; }
+  if(drawCastleStruct(s,cx,cy)) return;
   if(drawGroundStruct(s,cx,cy)){ if(s.owner==='player'&&s.hp<s.maxHp) hpBarAt(cx,cy-36,28,s.hp/s.maxHp,'#e0a040'); return; }
   switch(s.type){
     case 'wall_wood': iso3(g,s.x,s.y,1,1,.05,0,26,'#b88a5a','#8a6038','#6e4a2a'); g.strokeStyle='rgba(60,35,15,.5)'; g.lineWidth=1; for(let k=1;k<3;k++){ const p=S(s.x+.05,s.y+.95),q=S(s.x+.95,s.y+.95),r=S(s.x+.95,s.y+.05); g.beginPath(); g.moveTo(p[0],p[1]-k*9); g.lineTo(q[0],q[1]-k*9); g.lineTo(r[0],r[1]-k*9); g.stroke(); } break;
@@ -1165,6 +1172,7 @@ function drawTexts(){ ctx.textAlign='center'; for(const t of texts){ const [x,y]
 
 function drawBuildGhost(){
   const type=BUILD_ORDER[G.buildSel]; const w=screenToWorld(G.mouse.x,G.mouse.y); const tx=Math.floor(w.x), ty=Math.floor(w.y);
+  if(type==='castle'){ drawCastleGhost(tx,ty); return; }
   const ok=canPlace(type,tx,ty).ok;
   const a=S(tx,ty),b=S(tx+1,ty),c=S(tx+1,ty+1),d=S(tx,ty+1);
   poly(ctx,[a[0],a[1],b[0],b[1],c[0],c[1],d[0],d[1]],ok?'rgba(90,255,120,.35)':'rgba(255,70,70,.35)',ok?'#7f7':'#f66',2);
@@ -1486,7 +1494,7 @@ function updateProjectiles(dt){
     p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt;
     if(p.life<=0){ p.dead=true; continue; }
     const tx=Math.floor(p.x), ty=Math.floor(p.y);
-    if(blocked(tx,ty,true)){ const st=structAt(tx,ty); if(st&&p.from==='enemy'&&st.owner==='player') damageStruct(st,p.dmg*.5); if(!(st&&st.type==='totem')){ p.dead=true; burst(p.x,p.y,'#aaa',3); continue; } }
+    if(blocked(tx,ty,true)&&!(p.from==='player'&&structAt(tx,ty)&&(structAt(tx,ty).owner==='player'||structAt(tx,ty).owner==='castle'))){ const st=structAt(tx,ty); if(st&&p.from==='enemy'&&st.owner==='player') damageStruct(st,p.dmg*.5); if(!(st&&st.type==='totem')){ p.dead=true; burst(p.x,p.y,'#aaa',3); continue; } }
     if(p.from==='player'){
       for(const e of enemies){ if(e.dead||e.spawnT>0) continue; if(dist(e.x,e.y,p.x,p.y)<p.r+ENEMIES[e.type].size*.3*(e.chief?1.4:1)){ damageEnemy(e,p.dmg,p.vx/15,p.vy/15); p.dead=true; break; } }
       if(!p.dead && p.type==='arrow'){ const st=structAt(tx,ty); if(st&&st.type==='totem'){ hitTotem(st,p.dmg*.5); p.dead=true; } }
@@ -1511,7 +1519,8 @@ function updateEffects(dt){
 // --------- structures tick
 function updateStructs(dt){
   for(const s of structs){
-    if(!s.alive||s.owner!=='player') continue; s.hurt=Math.max(0,(s.hurt||0)-dt);
+    if(!s.alive||(s.owner!=='player'&&s.owner!=='castle')) continue; s.hurt=Math.max(0,(s.hurt||0)-dt);
+    if(s.type==='ctower'){ towerTick(s,dt); continue; }
     if(s.type==='farm'&&s.data.crop) s.data.t=Math.min(90,s.data.t+dt);
     else if(s.type==='ballista'){ s.data.cd=(s.data.cd||0)-dt; if(s.data.cd<=0 && dist(s.x,s.y,P.x,P.y)<35){ let best=null,bd=8; for(const e of enemies){ if(e.dead||e.spawnT>0) continue; const d=dist(e.x,e.y,s.x+.5,s.y+.5); if(d<bd){bd=d;best=e;} }
         if(best){ const dx=best.x-s.x-.5, dy=best.y-s.y-.5, l=Math.hypot(dx,dy)||1; s.data.aim=Math.atan2(isoY(dx,dy),isoX(dx,dy)); projectiles.push({x:s.x+.5,y:s.y+.5,vx:dx/l*16,vy:dy/l*16,dmg:18+P.lvl*2,from:'player',type:'bolt2',life:.8,r:.5}); s.data.cd=1.3; sfx('bow'); } } }
@@ -1560,7 +1569,7 @@ function updateNight(dt){
     if(!inB(tx,ty)||!isLand(tx,ty)||!walkable(tx,ty)) continue;
     if(villages.some(v=>dist(v.x,v.y,x,y)<v.r+2)) continue;
     if(lights.some(l=>dist(l.x,l.y,x,y)<l.r)) continue;
-    const isl=islands[islandOf[idx(tx,ty)]]; if(!isl||isl.boss) continue;
+    const isl=islands[islandOf[idx(tx,ty)]]; if(!isl||isl.boss||isl.castle) continue;
     spawnEnemy('gloom',x,y,{night:true,tier:isl.tier}); break; }
 }
 function updateRaid(dt){
@@ -1583,7 +1592,7 @@ function updateBossTrigger(){
   }
 }
 function updateRegrow(dt){
-  for(const r of regrowQ){ r.t-=dt; if(r.t<=0){ const i=idx(r.x,r.y); if(decoGrid[i]<0&&structGrid[i]<0&&dist(r.x+.5,r.y+.5,P.x,P.y)>2.5){ addDeco(r.type,r.x,r.y); r.done=true; } else r.t=10; } }
+  for(const r of regrowQ){ const ri=islands[islandOf[idx(r.x,r.y)]]; if(ri&&ri.castle){ r.done=true; continue; } r.t-=dt; if(r.t<=0){ const i=idx(r.x,r.y); if(decoGrid[i]<0&&structGrid[i]<0&&dist(r.x+.5,r.y+.5,P.x,P.y)>2.5){ addDeco(r.type,r.x,r.y); r.done=true; } else r.t=10; } }
   regrowQ=regrowQ.filter(r=>!r.done);
 }
 function explore(x,y,r){
@@ -1607,6 +1616,7 @@ function findInteract(){
     if(label){bd=d;best={kind:'struct',o:s,label};} }
   const gi=groundInteract(bd); if(gi){ best=gi; bd=gi.d; }
   const si=shrineInteract(bd); if(si){ best=si; bd=si.d; }
+  const ci=castleInteract(bd); if(ci){ best=ci; bd=ci.d; }
   const ex=extraInteract(bd); if(ex&&(ex.d<bd||!best)) best=ex;
   return best;
 }
@@ -1640,6 +1650,7 @@ function usePlinth(){
 
 // --------- building
 function canPlace(type,tx,ty){
+  if(type==='castle') return castleCheck(islandAt(tx+.5,ty+.5));
   const def=STRUCTS[type]; if(!inB(tx,ty)) return {ok:false,why:'Out of bounds'};
   if(dist(tx+.5,ty+.5,P.x,P.y)>6.2) return {ok:false,why:'Too far away'};
   if(def.req && !G.built[def.req]) return {ok:false,why:`Build a ${STRUCTS[def.req].n} first`};
@@ -1661,6 +1672,7 @@ function canPlace(type,tx,ty){
 }
 function placeStruct(){
   const type=BUILD_ORDER[G.buildSel]; const w=screenToWorld(G.mouse.x,G.mouse.y); const tx=Math.floor(w.x), ty=Math.floor(w.y);
+  if(type==='castle'){ castleAttempt(tx,ty); return; }
   const r=canPlace(type,tx,ty); if(!r.ok){ floatText(tx+.5,ty+.5,r.why,'#ffb0a0',12); sfx('error'); return; }
   const d=decoAt(tx,ty); if(d) removeDeco(d);
   payCost(STRUCTS[type].cost); const s=addStruct(type,tx,ty,'player',type==='farm'?{crop:null,t:0}:{});
@@ -1668,13 +1680,16 @@ function placeStruct(){
   G.built[type]=true; G.stats.built++; lightCache=null; burst(tx+.5,ty+.5,'#d8c8a8',10); sfx('build');
   if(type==='bed'&&P.spawn==null) P.spawn=s.id;
   questEvent('build',{s:type}); updateBuildBar();
+  if(typeof NET!=='undefined'&&NET.conns.length) netBroadcast({t:'build',type,x:tx,y:ty});
 }
 function demolish(){
   const w=screenToWorld(G.mouse.x,G.mouse.y); const s=structAt(Math.floor(w.x),Math.floor(w.y));
+  if(s&&s.owner==='castle'&&s.type==='cwall'){ demolishCastleWall(s); return; }
   if(!s||s.owner!=='player') return; if(dist(s.x+.5,s.y+.5,P.x,P.y)>6.2){ floatText(s.x+.5,s.y+.5,'Too far','#ffb0a0'); return; }
   if(STRUCTS[s.type].walk && s.type==='bridge' && Math.floor(P.x)===s.x && Math.floor(P.y)===s.y){ floatText(s.x+.5,s.y+.5,"You're standing on it!",'#ffb0a0'); return; }
   const c=STRUCTS[s.type].cost; for(const k in c){ const n=Math.floor(c[k]/2); if(n) give(k,n); }
   removeStruct(s); lightCache=null; if(s.type==='beacon') rebuildGloom(); burst(s.x+.5,s.y+.5,'#a87a4a',10); sfx('chop'); updateBuildBar();
+  if(typeof NET!=='undefined'&&NET.conns.length) netBroadcast({t:'demo',x:s.x,y:s.y});
 }
 // ===================== QUESTS =====================
 const QUESTS = [
@@ -1974,7 +1989,7 @@ function helpHTML(){ return `<table class="help">
 <tr><td><kbd>Right-click</kbd> / <kbd>F</kbd></td><td>Shoot bow (needs bow + arrows)</td></tr><tr><td><kbd>Shift</kbd></td><td>Dodge-roll (brief invincibility)</td></tr>
 <tr><td><kbd>E</kbd></td><td>Talk, open, plant, harvest, sleep</td></tr><tr><td><kbd>Q</kbd></td><td>Eat or heal with the best item</td></tr>
 <tr><td><kbd>B</kbd></td><td>Build mode: <kbd>1</kbd>-<kbd>9</kbd> or wheel to choose, click to place, drag to lay bridges, right-click to demolish</td></tr>
-<tr><td><kbd>C</kbd> <kbd>I</kbd> <kbd>J</kbd> <kbd>M</kbd> <kbd>L</kbd></td><td>Craft · Bag · Quest log · World map · Journal</td></tr><tr><td>Fishing</td><td>Craft a rod, stand by a pond or an island edge, press <kbd>E</kbd> to cast, then <kbd>E</kbd> again the moment the <b>!</b> appears</td></tr><tr><td><kbd>Esc</kbd></td><td>Menu / close</td></tr></table>
+<tr><td><kbd>C</kbd> <kbd>I</kbd> <kbd>J</kbd> <kbd>M</kbd> <kbd>L</kbd> <kbd>O</kbd></td><td>Craft · Bag · Quest log · World map · Journal · Friends (online)</td></tr><tr><td><kbd>Enter</kbd></td><td>Chat (while playing with friends)</td></tr><tr><td>Fishing</td><td>Craft a rod, stand by a pond or an island edge, press <kbd>E</kbd> to cast, then <kbd>E</kbd> again the moment the <b>!</b> appears</td></tr><tr><td><kbd>Esc</kbd></td><td>Menu / close</td></tr></table>
 <p style="font-size:13px;color:#9aa8cc;text-align:left">Tips: Red flashes and red circles mean an attack is coming, so roll away. Camp totems are shielded until their defenders fall. From Day 2, Gloomlings hunt at night; torches, campfires and lamps burn them. Enemies get tougher the farther you travel from Hollowbrook.</p>`; }
 
 // --------- panels
@@ -2023,7 +2038,7 @@ function renderPanel(tab){
   } else if(panelOpen==='map'){
     t.textContent='World Map';
     const w=Math.min(820,window.innerWidth*.9-40), h=Math.min(520,window.innerHeight*.86-150);
-    b.innerHTML=`<canvas id="bigmap" width="${w}" height="${h}" style="cursor:grab"></canvas><div class="legend"><span>🟡 You</span><span>🏠 Village</span><span style="color:#ff7a7a">☠ Camp</span><span>🏰 Boss fortress</span><span>🌀 Wind Shrine</span><span>✔ Cleared</span><span style="color:#f2c94c">★ Quest target</span><span>Scroll to zoom · drag to pan · <a href="#" id="bmCenter" style="color:#9ad0ff">center on me</a></span></div>`;
+    b.innerHTML=`<canvas id="bigmap" width="${w}" height="${h}" style="cursor:grab"></canvas><div class="legend"><span>🟡 You</span><span>🏠 Village</span><span style="color:#ff7a7a">☠ Camp</span><span>🏰 Boss fortress</span><span>🌀 Wind Shrine</span><span>👑 Your castle</span><span>✔ Cleared</span><span style="color:#f2c94c">★ Quest target</span><span>Scroll to zoom · drag to pan · <a href="#" id="bmCenter" style="color:#9ad0ff">center on me</a></span></div>`;
     if(!tab||!BM.init){ BM.cx=P.x; BM.cy=P.y; BM.s=1.6; BM.init=true; }
     const cv=$('bigmap'); const redraw=()=>drawMap(cv,BM.cx,BM.cy,BM.s,true); redraw();
     cv.onwheel=e=>{ e.preventDefault(); BM.s=clamp(BM.s*(e.deltaY<0?1.2:1/1.2),.35,8); redraw(); };
@@ -2039,11 +2054,12 @@ function renderPanel(tab){
     if(!sell.length) h+='<div style="color:#9aa8cc">Nothing to sell.</div>';
     for(const k of sell){ const it=ITEMS[k]; h+=`<div class="card"><div class="big">${it.i}</div><div style="flex:1"><div class="nm">${it.n} <span style="color:#9aa8cc">x${P.inv[k]}</span></div><div class="ds">${it.sell} 🪙 each</div><button class="btn alt" onclick="sell('${k}',1)">Sell 1</button> <button class="btn alt" onclick="sell('${k}',${P.inv[k]})">Sell all</button></div></div>`; }
     b.innerHTML=h+'</div>';
+  } else if(panelOpen==='online'){ renderOnline(t,tabs,b);
   } else if(panelOpen==='journal'){ renderJournal(t,tabs,b);
   } else if(panelOpen==='bounty'){ renderBounty(t,tabs,b);
   } else if(panelOpen==='menu'){
     t.textContent='Paused';
-    b.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn" onclick="closePanel()">Resume</button><button class="btn alt" onclick="saveGame(true)">Save game</button><button class="btn alt" onclick="muted=!muted;renderPanel()">Sound: ${muted?'Off':'On'}</button><button class="btn alt" onclick="quitToTitle()">Quit to title</button></div>${helpHTML()}`;
+    b.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn" onclick="closePanel()">Resume</button><button class="btn alt" onclick="saveGame(true)">Save game</button><button class="btn alt" onclick="openPanel('online')">👥 Play with friends</button><button class="btn alt" onclick="muted=!muted;renderPanel()">Sound: ${muted?'Off':'On'}</button><button class="btn alt" onclick="quitToTitle()">Quit to title</button></div>${helpHTML()}`;
   }
 }
 function costHTML(c){ return Object.keys(c).map(k=>`<span class="${cnt(k)>=c[k]?'ok':'no'}">${k==='coins'?'🪙':ITEMS[k].i} ${cnt(k)}/${c[k]}</span>`).join(''); }
@@ -2082,10 +2098,12 @@ function drawMap(cv,cx,cy,s,big){
   for(const f of forts){ if(!ex(f.x,f.y)) continue; const [x,y]=mp(f.x,f.y); if(!onC(x,y)) continue; g.font=(big?20:14)+'px serif'; g.fillText(f.cleared?'🏳️':'🏰',x,y); if(big&&s>=.8){ g.font='bold 11px system-ui'; g.fillStyle=f.cleared?'#8fd08f':'#ffb080'; g.strokeStyle='#000'; g.lineWidth=3; const lb=f.name+(f.cleared?' ✔':''); g.strokeText(lb,x,y+15); g.fillText(lb,x,y+15);} }
   for(const c of camps){ if(c.fort||!ex(c.x,c.y)) continue; const [x,y]=mp(c.x,c.y); if(!onC(x,y)) continue; g.font='bold '+(big?14:11)+'px system-ui'; g.fillStyle=c.cleared?'#8fd08f':'#ff6060'; g.fillText(c.cleared?'✔':'☠',x,y); if(big&&(s>=2.6||c.shard)){ g.font='11px system-ui'; g.fillStyle='#ffd0d0'; g.strokeStyle='#000'; g.lineWidth=3; g.strokeText(c.name+(c.shard&&!c.chiefDead?' 🔷':''),x,y+13); g.fillText(c.name+(c.shard&&!c.chiefDead?' 🔷':''),x,y+13);} }
   if(ex(plinthPos.x,plinthPos.y)){ const [x,y]=mp(plinthPos.x,plinthPos.y); g.font=(big?14:10)+'px serif'; g.fillText('🔷',x,y); }
+  for(const isl of islands){ if(!isl.castle) continue; const [x,y]=mp(isl.x,isl.y); if(!onC(x,y)) continue; g.font=(big?18:13)+'px serif'; g.fillText('👑',x,y); if(big&&s>=.8){ g.font='bold 11px system-ui'; g.fillStyle='#ffe080'; g.strokeStyle='#000'; g.lineWidth=3; g.strokeText(isl.name,x,y+15); g.fillText(isl.name,x,y+15);} }
   for(const sh of shrines){ if(!big&&!ex(sh.x,sh.y)) continue; const [x,y]=mp(sh.x,sh.y); if(!onC(x,y)) continue; g.font=(big?16:12)+'px serif'; g.fillText(shrineAttuned(sh)?'✨':'🌀',x,y); if(big&&s>=.9){ g.font='bold 11px system-ui'; g.fillStyle='#bfe8ff'; g.strokeStyle='#000'; g.lineWidth=3; g.strokeText(sh.name,x,y+15); g.fillText(sh.name,x,y+15);} }
   const st=islandByKey.storm; if(big||ex(st.x,st.y)){ const [x,y]=mp(st.x,st.y); g.font=(big?20:13)+'px serif'; g.fillText('🌀',x,y); }
   const tg=questTarget(); if(tg){ let [x,y]=mp(tg.x,tg.y); if(true){ if(big){ x=clamp(x,12,w-12); y=clamp(y,12,h-12); } else { const dx=x-w/2, dy=y-h/2, l=Math.hypot(dx,dy); if(l>w/2-12){ x=w/2+dx/l*(w/2-12); y=h/2+dy/l*(w/2-12);} } } g.font='bold '+(big?20:16)+'px system-ui'; g.fillStyle='#f2c94c'; g.strokeStyle='#4a3000'; g.lineWidth=3; g.strokeText('★',x,y); g.fillText('★',x,y); }
   for(const e of enemies){ if(big||e.dead) continue; if(dist(e.x,e.y,P.x,P.y)<30){ const [x,y]=mp(e.x,e.y); g.fillStyle=e.chief||e.type==='warlord'?'#ffa030':'#ff4a4a'; g.fillRect(x-1.5,y-1.5,3,3); } }
+  netMapDots(g,mp);
   let [px,py]=mp(P.x,P.y); if(big){ px=clamp(px,8,w-8); py=clamp(py,8,h-8); } g.fillStyle='#ffe040'; g.strokeStyle='#000'; g.lineWidth=2; g.beginPath(); g.arc(px,py,big?6:4.5,0,6.283); g.fill(); g.stroke();
 }
 
@@ -2100,7 +2118,7 @@ function updateHUD(dt){
   $('gear').innerHTML=`<span>${wp?ITEMS[wp].i+' '+ITEMS[wp].n:'✊ Fists'}</span>${ar?`<span>${ITEMS[ar].i} ${Math.round(ITEMS[ar].armor*100)}%</span>`:''}${pk?`<span>${ITEMS[pk].i} T${ITEMS[pk].tier}</span>`:''}${ax?`<span>${ITEMS[ax].i}</span>`:''}${P.inv.bow>0?`<span>🏹 ${P.inv.arrows||0}</span>`:''}`;
   const tl=timeLabel(); $('clock').textContent=`${isNight()?'🌙':G.time>.58&&G.time<.7?'🌇':'☀️'} Day ${G.day} · ${tl}`;
   const isl=islands[islandOf[idx(clamp(Math.floor(P.x),0,W-1),clamp(Math.floor(P.y),0,W-1))]];
-  $('islname').textContent=isl?(isl.kind==='ground'?`The Gloomlands · ${G.ext.groundClean?'Cleansed':'Gloom '+Math.round((G.gloomHere||0)*100)+'%'} · Danger ${'★'.repeat(landing?groundTier(P.x):5)}`:`${isl.name}${isl.tier>0?' · Danger '+'★'.repeat(isl.tier):' · Safe'}`):'Open sky';
+  $('islname').textContent=isl?(isl.castle?`👑 ${isl.name} · Your castle · Safe`:isl.kind==='ground'?`The Gloomlands · ${G.ext.groundClean?'Cleansed':'Gloom '+Math.round((G.gloomHere||0)*100)+'%'} · Danger ${'★'.repeat(landing?groundTier(P.x):5)}`:`${isl.name}${isl.tier>0?' · Danger '+'★'.repeat(isl.tier):' · Safe'}`):'Open sky';
   const order=['wood','stone','fiber','berries','seeds','wheat','iron','crystal','diamond','petal','glowcap','shard'];
   $('res').innerHTML=order.filter(k=>(P.inv[k]||0)>0||['wood','stone','fiber'].includes(k)).map(k=>`<div class="chip">${ITEMS[k].i} ${P.inv[k]||0}</div>`).join('');
   const it=P.alive&&!isPaused()?findInteract():null; const a=$('action');
@@ -2137,6 +2155,7 @@ function updateBuildBar(){
     return `<div class="bi ${i===G.buildSel?'sel':''} ${locked?'lock':can?'':'no'}" data-i="${i}"><span class="hk">${i<9?i+1:i===9?0:''}</span><div class="ic">${d.i}</div><div class="nm">${d.n}</div></div>`; }).join('');
   bb.querySelectorAll('.bi').forEach(el=>el.onclick=()=>{ G.buildSel=+el.dataset.i; updateBuildBar(); });
   const d=STRUCTS[BUILD_ORDER[G.buildSel]]; const locked=(d.req&&!G.built[d.req])||(d.minLvl&&P.lvl<d.minLvl);
+  if(d.special){ info.innerHTML=`<b>${d.i} ${d.n}</b> · <span style="color:#f2c94c">1.5 🪨 stone per island tile</span> · <span style="color:#9aa8cc">${d.d}</span>`; } else
   info.innerHTML=`<b>${d.i} ${d.n}</b> · ${locked?`<span style="color:#ff7a7a">${d.req&&!G.built[d.req]?`Requires building a ${STRUCTS[d.req].n} first`:`Requires level ${d.minLvl}`}</span>`:`<span class="cost" style="display:inline-flex;margin:0">${costHTML(d.cost)}</span>`} · <span style="color:#9aa8cc">${d.d}</span>`;
   const sel=bb.querySelector('.sel'); if(sel) sel.scrollIntoView({block:'nearest',inline:'nearest'});
 }
@@ -2145,11 +2164,12 @@ function toggleBuild(on){ G.buildMode=on==null?!G.buildMode:on; G.mouse.down=fal
 // --------- input
 let lastPlaced=null;
 window.addEventListener('keydown',e=>{
+  const ae=document.activeElement; if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')){ if(e.key==='Escape') ae.blur(); return; }
   const k=e.key.toLowerCase(); if(['tab',' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
   if(G.mode!=='play') return;
   if(overlayOpen) return;
   if(dialogOpen){ if(k==='e'||k==='enter'||k===' '){ if(dialogBtns[0]) dialogBtns[0].fn(); } else if(k==='escape') closeDialog(); return; }
-  if(panelOpen){ if(k==='escape'||(k==='c'&&panelOpen==='craft')||((k==='i'||k==='tab')&&panelOpen==='inv')||(k==='j'&&panelOpen==='quests')||(k==='m'&&panelOpen==='map')||(k==='l'&&panelOpen==='journal')) closePanel(); else if(k==='l') openPanel('journal'); else if(k==='c') openPanel('craft'); else if(k==='i'||k==='tab') openPanel('inv'); else if(k==='j') openPanel('quests'); else if(k==='m') openPanel('map'); return; }
+  if(panelOpen){ if(k==='escape'||(k==='c'&&panelOpen==='craft')||((k==='i'||k==='tab')&&panelOpen==='inv')||(k==='j'&&panelOpen==='quests')||(k==='m'&&panelOpen==='map')||(k==='l'&&panelOpen==='journal')||(k==='o'&&panelOpen==='online')) closePanel(); else if(k==='o') openPanel('online'); else if(k==='l') openPanel('journal'); else if(k==='c') openPanel('craft'); else if(k==='i'||k==='tab') openPanel('inv'); else if(k==='j') openPanel('quests'); else if(k==='m') openPanel('map'); return; }
   if(e.repeat&&k!=='w'&&k!=='a'&&k!=='s'&&k!=='d') { G.keys[k]=true; return; }
   G.keys[k]=true;
   if(k==='e') doInteract();
@@ -2159,6 +2179,8 @@ window.addEventListener('keydown',e=>{
   else if(k==='j') openPanel('quests');
   else if(k==='m') openPanel('map');
   else if(k==='l') openPanel('journal');
+  else if(k==='o') openPanel('online');
+  else if(k==='enter'&&NET.conns.length){ openPanel('online'); setTimeout(()=>{ const i=$('netChatIn'); if(i) i.focus(); },30); }
   else if(k==='q') quickHeal();
   else if(k==='shift') tryDodge();
   else if(k==='escape'){ if(G.buildMode) toggleBuild(false); else openPanel('menu'); }
@@ -2167,7 +2189,7 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keyup',e=>{ G.keys[e.key.toLowerCase()]=false; if(e.key==='Shift') G.keys.shift=false; });
 window.addEventListener('blur',()=>{ G.keys={}; G.mouse.down=false; G.mouse.right=false; });
 canvas.addEventListener('mousemove',e=>{ G.mouse.x=e.clientX; G.mouse.y=e.clientY;
-  if(G.buildMode&&G.mouse.down&&G.mode==='play'&&!isPaused()){ const w=screenToWorld(G.mouse.x,G.mouse.y); const key=Math.floor(w.x)+','+Math.floor(w.y); if(key!==lastPlaced){ lastPlaced=key; const type=BUILD_ORDER[G.buildSel]; if(canPlace(type,Math.floor(w.x),Math.floor(w.y)).ok) placeStruct(); } } });
+  if(G.buildMode&&G.mouse.down&&BUILD_ORDER[G.buildSel]!=='castle'&&G.mode==='play'&&!isPaused()){ const w=screenToWorld(G.mouse.x,G.mouse.y); const key=Math.floor(w.x)+','+Math.floor(w.y); if(key!==lastPlaced){ lastPlaced=key; const type=BUILD_ORDER[G.buildSel]; if(canPlace(type,Math.floor(w.x),Math.floor(w.y)).ok) placeStruct(); } } });
 canvas.addEventListener('mousedown',e=>{
   if(G.mode!=='play'||isPaused()) return;
   if(e.button===0&&G.fishing){ reelIn(); return; }
@@ -2212,7 +2234,7 @@ const RELIC_NOUN=['Idol','Horn','Compass','Crown','Chalice','Lantern','Mask','Ke
 const RELIC_REWARDS=[[5,'Max HP +15',()=>{P.maxHp+=15;P.hp+=15;}],[10,'+10% damage',()=>{G.ext.dmgBonus+=.1;}],[15,'Max HP +20',()=>{P.maxHp+=20;P.hp+=20;}],[20,'+10% damage',()=>{G.ext.dmgBonus+=.1;}],[30,'Max HP +30',()=>{P.maxHp+=30;P.hp+=30;}],[40,'+15% damage and 1000 coins',()=>{G.ext.dmgBonus+=.15;give('coins',1000);}]];
 const RELIC_TOTAL=40;
 let critters=[], balloons=[], meteors=[], extT=0, petEnt=null;
-function freshExt(){ return {shrines:[],pets:[],pet:null,fishLog:{},fishCount:0,bounties:[],bountyTaken:{},ach:{},visited:[],relics:0,dmgBonus:0,balloons:0,bountiesDone:0,stardust:0,tips:{}}; }
+function freshExt(){ return {castles:[],shrines:[],pets:[],pet:null,fishLog:{},fishCount:0,bounties:[],bountyTaken:{},ach:{},visited:[],relics:0,dmgBonus:0,balloons:0,bountiesDone:0,stardust:0,tips:{}}; }
 G.ext=freshExt();
 
 // ---------- generation (called from genWorld)
@@ -2417,6 +2439,8 @@ const ACH=[
   ['hearts','Heartbreaker','Destroy all 5 Gloom Hearts',()=>camps.filter(c=>c.heart&&!c.mother&&c.cleared).length>=5,2000],
   ['mother','Dawn Below','Defeat the Gloom Mother',()=>!!G.ext.groundClean,5000],
   ['shrines','Windbearer','Claim all 5 Storm Seals',()=>G.ext.shrines.length>=5,1000],
+  ['castle1','Lord of the Isle','Build your first castle',()=>G.ext.castles.length>=1,300],
+  ['castle5','Sky Monarch','Own 5 castles',()=>G.ext.castles.length>=5,1500],
   ['isl50','Wanderer','Discover 50 islands',()=>G.ext.visited.length>=50,100],
   ['isl250','Explorer','Discover 250 islands',()=>G.ext.visited.length>=250,400],
   ['isl1000','Every Last Rock','Discover all 1,000 islands',()=>G.ext.visited.length>=1000,3000],
@@ -2489,7 +2513,7 @@ function renderJournal(t,tabs,body){
   else if(journalTab==='pets'){ h+=`<div class="stn">Find wild animals on wild islands and feed them their favorite food (press E next to them). Your active pet follows you and fights.</div><div class="grid">`;
     for(const k in PETS){ const pd=PETS[k]; const own=G.ext.pets.includes(k); h+=`<div class="card"><div class="big">${own?pd.i:'❔'}</div><div style="flex:1"><div class="nm">${own?pd.n:'Unknown pet'}</div><div class="ds">${own?pd.d:`Lives in ${BIOMES[pd.biomes[0]].name} areas. Loves ${ITEMS[pd.treat].n}.`}</div>${own?`<button class="btn" ${G.ext.pet===k?'disabled':''} onclick="G.ext.pet='${k}';petEnt=null;renderPanel()">${G.ext.pet===k?'Active':'Make active'}</button>`:''}</div></div>`; } h+='</div>'; }
   else { const tiers={}; for(const id of G.ext.visited){ const t=islands[id].tier; tiers[t]=(tiers[t]||0)+1; }
-    h+=`<div class="stn">Islands discovered: <b>${G.ext.visited.length}</b> / ${islands.length}</div><div style="font-size:14px;line-height:2">Villages visited: ${villagesVisited()} / ${villages.length}<br>Boss fortresses conquered: ${forts.filter(f=>f.cleared&&!f.ground).length} / ${forts.filter(f=>!f.ground).length}<br>Wind Shrines attuned: ${G.ext.shrines.length} / ${shrines.length}<br>Gloom Hearts destroyed: ${camps.filter(c=>c.heart&&!c.mother&&c.cleared).length} / 5<br>Camps cleared: ${camps.filter(c=>c.cleared&&!c.fort).length} / ${camps.filter(c=>!c.fort).length}<br>Bridge planks built: ${G.stats.bridges||0}<br>Structures built: ${G.stats.built}<br>Enemies defeated: ${G.stats.kills}<br>Bounties completed: ${G.ext.bountiesDone}<br>Balloons popped: ${G.ext.balloons}<br>Stardust collected: ${G.ext.stardust}</div>`; }
+    h+=`<div class="stn">Islands discovered: <b>${G.ext.visited.length}</b> / ${islands.length}</div><div style="font-size:14px;line-height:2">Villages visited: ${villagesVisited()} / ${villages.length}<br>Boss fortresses conquered: ${forts.filter(f=>f.cleared&&!f.ground).length} / ${forts.filter(f=>!f.ground).length}<br>Castles owned: ${G.ext.castles.length}<br>Wind Shrines attuned: ${G.ext.shrines.length} / ${shrines.length}<br>Gloom Hearts destroyed: ${camps.filter(c=>c.heart&&!c.mother&&c.cleared).length} / 5<br>Camps cleared: ${camps.filter(c=>c.cleared&&!c.fort).length} / ${camps.filter(c=>!c.fort).length}<br>Bridge planks built: ${G.stats.bridges||0}<br>Structures built: ${G.stats.built}<br>Enemies defeated: ${G.stats.kills}<br>Bounties completed: ${G.ext.bountiesDone}<br>Balloons popped: ${G.ext.balloons}<br>Stardust collected: ${G.ext.stardust}</div>`; }
   body.innerHTML=h;
 }
 // ===================== THE GLOOMLANDS (the ground below) =====================
@@ -2801,6 +2825,216 @@ function drawDiamondOre(d){ const [x,y]=S(d.x+.5,d.y+.5); ell(ctx,x,y+1,14,6,'rg
   poly(ctx,[x-13,y,x-9,y-13,x+2,y-18,x+12,y-9,x+13,y,x,y+4],'#5e6070'); poly(ctx,[x-9,y-13,x+2,y-18,x+12,y-9,x+1,y-6],'#7a7c8c');
   const gems=[[-5,-9,5],[4,-12,6],[7,-4,4]]; for(const [ox,oy,s] of gems){ poly(ctx,[x+ox,y+oy-s,x+ox+s*.8,y+oy,x+ox,y+oy+s*.7,x+ox-s*.8,y+oy],'#c8f8ff','#ffffff',1); poly(ctx,[x+ox,y+oy-s,x+ox+s*.8,y+oy,x+ox,y+oy],'#e8feff'); }
   if(Math.sin(G.t*3+d.x)>.92) circ(ctx,x+4,y-16,2.2,'#fff'); }
+// ===================== CASTLES =====================
+// Pay stone (based on island size) to turn a whole island into your castle. Villages can't become castles.
+T.CASTLE=13;
+TILE_COL[T.CASTLE]=['#b9b3a7','#b1ab9f','#c1bbaf','#a9a397']; LIP_COL[T.CASTLE]='#8a847a'; MAP_COL[T.CASTLE]=[182,174,160];
+Object.assign(STRUCTS,{
+  castle:{n:'Castle',i:'🏰',cost:{},special:true,req:'workbench',d:'Turn a whole island into your castle. Costs 1.5 stone per tile of island. Villages can never become castles.'},
+  cwall:{solid:true,world:true}, ctower:{solid:true,world:true,light:3}, ckeep:{w:2,h:2,solid:true,world:true,station:'workbench',light:5},
+});
+BUILD_ORDER.push('castle');
+const CASTLE_COL='#3a6ad8';
+function islandTiles(isl){ const out=[]; const b=Math.ceil(isl.r*1.25)+2; for(let y=Math.floor(isl.y-b);y<=isl.y+b;y++)for(let x=Math.floor(isl.x-b);x<=isl.x+b;x++){ if(inB(x,y)&&islandOf[idx(x,y)]===isl.id) out.push([x,y]); } return out; }
+function castleCost(isl){ const n=islandTiles(isl).filter(([x,y])=>tiles[idx(x,y)]!==T.WATER).length; return Math.max(60,Math.round(n*1.5)); }
+function castleCheck(isl){
+  if(!isl) return {ok:false,why:'Point at an island'};
+  if(isl.castle) return {ok:false,why:'Already your castle'};
+  if(isl.village) return {ok:false,why:"Villages can't become castles"};
+  if(isl.kind==='ground') return {ok:false,why:'The Gloomlands are too vast for a castle'};
+  if(isl.boss) return {ok:false,why:'The storm will not allow it'};
+  if(camps.some(c=>c.isl===isl.id&&!c.cleared)) return {ok:false,why:'Clear the enemies on this island first'};
+  if(!G.built.workbench) return {ok:false,why:'Build a Workbench first'};
+  const cost=castleCost(isl); if(cnt('stone')<cost) return {ok:false,why:`Needs ${cost} stone (you have ${cnt('stone')})`,cost};
+  return {ok:true,cost};
+}
+function castleAttempt(tx,ty){
+  const isl=islandAt(tx+.5,ty+.5); const r=castleCheck(isl);
+  if(!r.ok){ floatText(tx+.5,ty+.5,r.why,'#ffb0a0',12); sfx('error'); return; }
+  G.mouse.down=false;
+  showOverlay(`<h2>🏰 Build a Castle?</h2><p>Turn <b>${isl.name}</b> into your castle for <b>${r.cost} stone</b>.</p><p style="font-size:14px">You get stone walls around the edge (with gates), defense towers that shoot enemies, and a keep you can rest in that works as a Workbench. Nothing hostile will spawn there at night.</p><div class="btns"><button class="btn" id="cYes">Build it (${r.cost} 🪨)</button><button class="btn alt" id="cNo">Cancel</button></div>`);
+  $('cYes').onclick=()=>{ closeOverlay(); const rr=castleCheck(isl); if(!rr.ok){ toast(rr.why); return; } P.inv.stone-=rr.cost; const rec={id:isl.id,removed:[]}; G.ext.castles.push(rec); applyCastle(isl,rec,true); };
+  $('cNo').onclick=closeOverlay;
+}
+function applyCastle(isl,rec,fresh){
+  isl.castle=rec; isl.castleName=isl.castleName||isl.name;
+  const all=islandTiles(isl); const set=new Set(all.map(([x,y])=>x+','+y));
+  const removed=new Set((rec.removed||[]).map(p=>p[0]+','+p[1]));
+  const isEdge=(x,y)=>[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>!set.has((x+dx)+','+(y+dy)));
+  const nearBridge=(x,y)=>{ for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const s=structAt(x+dx,y+dy); if(s&&STRUCTS[s.type].walk&&isVoidT(tileAt(x+dx,y+dy))) return true; } return false; };
+  // clear the island: every tree, rock, plant and ore, plus leftover camp tents, fires, pillars and ruins
+  for(const [x,y] of all){ const i=idx(x,y); const d=decoAt(x,y); if(d) removeDeco(d); const st=structAt(x,y); if(st&&['tent','ccamp','pillar','ruin','vfarm'].includes(st.type)) removeStruct(st); if(tiles[i]===T.WATER) continue; tiles[i]=T.CASTLE; }
+  regrowQ=regrowQ.filter(q=>islandOf[idx(q.x,q.y)]!==isl.id);
+  // towers at the four diagonals of the island
+  const edges=all.filter(([x,y])=>tiles[idx(x,y)]!==T.WATER&&isEdge(x,y));
+  const towers=new Set();
+  for(const a of [.785,2.356,3.927,5.498]){ let best=null,bd=1e9; for(const [x,y] of edges){ const ang=Math.atan2(y+.5-isl.y,x+.5-isl.x); const d=Math.abs(angDiff(ang,a)); if(d<bd){bd=d;best=[x,y];} } if(best) towers.add(best[0]+','+best[1]); }
+  for(const [x,y] of edges){ const k=x+','+y; if(removed.has(k)||structAt(x,y)) continue; if(nearBridge(x,y)) continue;
+    if(towers.has(k)){ const d=decoAt(x,y); if(d) removeDeco(d); addStruct('ctower',x,y,'castle',{}); continue; }
+    if(hash2(x*3+1,y*7+2)<.11) continue; // gates
+    const d=decoAt(x,y); if(d) removeDeco(d); addStruct('cwall',x,y,'castle',{}); }
+  // the keep near the centre
+  let kp=null; for(let r=0;r<=Math.max(3,isl.r*.6)&&!kp;r++) for(let dy=-r;dy<=r&&!kp;dy++)for(let dx=-r;dx<=r&&!kp;dx++){ const x=Math.floor(isl.x)+dx-1, y=Math.floor(isl.y)+dy-1;
+    if(footprintFree(x,y,2,2)&&set.has(x+','+y)&&set.has((x+1)+','+(y+1))&&!isEdge(x,y)&&!isEdge(x+1,y+1)&&!decoAt(x,y)&&!decoAt(x+1,y)&&!decoAt(x,y+1)&&!decoAt(x+1,y+1)) kp=[x,y]; }
+  if(!kp) for(let r=0;r<=isl.r&&!kp;r++) for(let dy=-r;dy<=r&&!kp;dy++)for(let dx=-r;dx<=r&&!kp;dx++){ const x=Math.floor(isl.x)+dx-1, y=Math.floor(isl.y)+dy-1; if(footprintFree(x,y,2,2)&&set.has(x+','+y)&&set.has((x+1)+','+(y+1))){ for(const [xx,yy] of [[x,y],[x+1,y],[x,y+1],[x+1,y+1]]){ const d=decoAt(xx,yy); if(d) removeDeco(d);} kp=[x,y]; } }
+  if(kp){ isl.castleKeep=addStruct('ckeep',kp[0],kp[1],'castle',{}); for(const [dx,dy] of [[3,0],[-2,1],[0,3]]){ const x=kp[0]+dx, y=kp[1]+dy; if(set.has(x+','+y)&&!isEdge(x,y)&&footprintFree(x,y,1,1)&&!decoAt(x,y)){ addStruct(dx===3?'vcampfire':'banner',x,y,'castle',{}); } } }
+  chunkCache.clear(); mapDirty=true; lightCache=null; for(const e of enemies) if(e.night&&islandAt(e.x,e.y)===isl) e.dead=true;
+  if(fresh){ shake=1; sfx('level'); burst(isl.x,isl.y,'#d8d0c0',40,4); toast(`🏰 <b>${isl.name}</b> is now your castle!`,'gold'); G.stats.built++; saveGame(); }
+}
+function castleInteract(bd){
+  const px=Math.floor(P.x),py=Math.floor(P.y);
+  for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){ const s=structAt(px+dx,py+dy); if(s&&s.type==='ckeep'){ const d=dist(s.x+1,s.y+1,P.x,P.y); if(d<bd+.8) return {kind:'extra',label:'Rest in your keep (set respawn)',fn:()=>{ P.spawn=s.id; P.hp=P.maxHp; toast('🏰 You rest in your keep. Respawn point set, health restored.'); sfx('eat'); },d:Math.min(d,bd-.01)}; } }
+  return null;
+}
+function demolishCastleWall(s){
+  const isl=islandAt(s.x+.5,s.y+.5); if(!isl||!isl.castle) return false;
+  if(dist(s.x+.5,s.y+.5,P.x,P.y)>6.2){ floatText(s.x+.5,s.y+.5,'Too far','#ffb0a0'); return true; }
+  removeStruct(s); isl.castle.removed.push([s.x,s.y]); give('stone',3); burst(s.x+.5,s.y+.5,'#b8b2a6',10); sfx('chop'); floatText(s.x+.5,s.y+.5,'Gate opened','#fff'); return true;
+}
+function towerTick(s,dt){
+  s.data.cd=(s.data.cd||0)-dt; if(s.data.cd>0||dist(s.x,s.y,P.x,P.y)>40) return;
+  let best=null,bd=9.5; for(const e of enemies){ if(e.dead||e.spawnT>0) continue; const d=dist(e.x,e.y,s.x+.5,s.y+.5); if(d<bd){bd=d;best=e;} }
+  if(best){ const dx=best.x-s.x-.5, dy=best.y-s.y-.5, l=Math.hypot(dx,dy)||1; projectiles.push({x:s.x+.5,y:s.y+.5,vx:dx/l*18,vy:dy/l*18,dmg:30+P.lvl*2,from:'player',type:'bolt2',life:.8,r:.5}); s.data.cd=1; sfx('bow'); }
+}
+function drawCastleStruct(s,cx,cy){
+  const g=ctx;
+  if(s.type==='cwall'){ const r=iso3(g,s.x,s.y,1,1,0,0,34,'#c8c2b6','#a29c90','#878175');
+    for(const [ox,oy] of [[.15,.15],[.85,.15],[.85,.85],[.15,.85]]){ iso3(g,s.x+ox-.12,s.y+oy-.12,.24,.24,0,34,8,'#d4cec2','#aaa498','#8e887c'); }
+    g.strokeStyle='rgba(80,75,65,.35)'; g.lineWidth=1; for(let k=1;k<3;k++){ g.beginPath(); g.moveTo(r.d[0],r.d[1]-k*11); g.lineTo(r.c[0],r.c[1]-k*11); g.lineTo(r.b[0],r.b[1]-k*11); g.stroke(); } return true; }
+  if(s.type==='ctower'){ const r=iso3(g,s.x-.1,s.y-.1,1.2,1.2,0,0,64,'#ccc6ba','#a8a296','#8a8478');
+    for(const [ox,oy] of [[0,0],[1,0],[1,1],[0,1],[.5,0],[1,.5],[.5,1],[0,.5]]) iso3(g,s.x-.1+ox*1.2-.12,s.y-.1+oy*1.2-.12,.24,.24,0,64,9,'#d8d2c6','#aea89c','#908a7e');
+    g.fillStyle='#2a2620'; g.fillRect(cx-2,cy-46,4,12);
+    g.fillStyle='#3a2a20'; g.fillRect(cx-1.5,cy-110,3,36); g.fillStyle=CASTLE_COL; g.beginPath(); g.moveTo(cx+1.5,cy-110); g.lineTo(cx+22+Math.sin(G.t*3+s.x)*3,cy-104); g.lineTo(cx+1.5,cy-97); g.fill(); circ(g,cx+9,cy-104,2.5,'#ffd040'); return true; }
+  if(s.type==='ckeep'){ const r=iso3(g,s.x,s.y,2,2,.05,0,62,'#d0cabe','#aca69a','#8e887c');
+    for(let k=0;k<=6;k++){ const t=k/6; for(const [a,b] of [[r.d,r.c],[r.c,r.b]]){ const x=lerp(a[0],b[0],t), y=lerp(a[1],b[1],t); g.fillStyle='#d8d2c6'; g.fillRect(x-4,y-72,8,10); } }
+    const dm=S(s.x+1,s.y+1.95); poly(g,[dm[0]-9,dm[1],dm[0]+9,dm[1]-4,dm[0]+9,dm[1]-30,dm[0],dm[1]-36,dm[0]-9,dm[1]-26],'#5a3a20');
+    const w1=S(s.x+1.95,s.y+.6); poly(g,[w1[0],w1[1]-34,w1[0]+5,w1[1]-36,w1[0]+5,w1[1]-46,w1[0],w1[1]-44],'#ffe9a0');
+    g.fillStyle='#3a2a20'; g.fillRect(cx-1.5,cy-120,3,44); g.fillStyle=CASTLE_COL; g.beginPath(); g.moveTo(cx+1.5,cy-120); g.lineTo(cx+34+Math.sin(G.t*2.5)*4,cy-112); g.lineTo(cx+1.5,cy-102); g.fill(); g.font='13px serif'; g.textAlign='center'; g.fillText('👑',cx+14,cy-107); return true; }
+  return false;
+}
+function drawCastleGhost(tx,ty){
+  const isl=islandAt(tx+.5,ty+.5); const r=castleCheck(isl);
+  if(isl&&!isl.castle&&!isl.village&&isl.kind!=='ground'){ ctx.globalAlpha=.3; for(const [x,y] of islandTiles(isl)){ const a=S(x,y),b=S(x+1,y),c=S(x+1,y+1),d=S(x,y+1); if(a[0]<-50||a[0]>VW+50||a[1]<-50||a[1]>VH+50) continue; poly(ctx,[a[0],a[1],b[0],b[1],c[0],c[1],d[0],d[1]],r.ok?'#80ff90':'#ff7070'); } ctx.globalAlpha=1; }
+  const msg=isl?(r.ok?`🏰 Make ${isl.name} your castle: ${r.cost} stone (click)`:`🏰 ${r.why}`):'🏰 Point at an island';
+  castleGhostMsg={msg,ok:r.ok};
+}
+let castleGhostMsg=null;
+function drawCastleGhostMsg(){ if(!G.buildMode||BUILD_ORDER[G.buildSel]!=='castle'||!castleGhostMsg) return; const {msg,ok}=castleGhostMsg; ctx.font='bold 14px system-ui'; ctx.textAlign='center'; const w=ctx.measureText(msg).width; ctx.fillStyle='rgba(14,20,40,.85)'; ctx.fillRect(G.mouse.x-w/2-8,G.mouse.y-44,w+16,24); ctx.fillStyle=ok?'#b8ffb8':'#ffc0c0'; ctx.fillText(msg,G.mouse.x,G.mouse.y-27); }
+// ===================== ONLINE: FRIEND CODES =====================
+// Peer-to-peer play through PeerJS (WebRTC). Your friend code is your PeerJS id. Whoever you join is the host and relays to everyone.
+// Works when the game is on its own website (for example GitHub Pages). Sandboxed previews block the connection.
+const NET={peer:null,conns:[],host:null,isHost:false,code:null,name:null,players:{},status:'offline',err:'',sendT:0,chat:[],libLoading:false};
+const NET_CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function netCfg(){ try{ return JSON.parse(localStorage.getItem('skywright_net_cfg')||'null'); }catch(e){ return null; } }
+function netLS(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){ return null; } }
+function netNewCode(){ let c=''; for(let i=0;i<6;i++) c+=NET_CODE_CHARS[Math.floor(Math.random()*NET_CODE_CHARS.length)]; return c; }
+function netMyCode(){ if(!NET.code){ NET.code=netLS('skywright_code')||netNewCode(); netLS('skywright_code',NET.code); } return NET.code; }
+function netMyName(){ if(!NET.name){ NET.name=netLS('skywright_name')||('Skywright-'+netMyCode().slice(0,3)); } return NET.name; }
+function netColor(id){ let h=0; for(const ch of String(id)) h=(h*31+ch.charCodeAt(0))>>>0; return `hsl(${h%360},75%,58%)`; }
+function loadPeerLib(ok,fail){
+  if(window.Peer) return ok(); const cfg=netCfg();
+  const urls=[cfg&&cfg.lib,'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js','https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'].filter(Boolean);
+  let i=0; const next=()=>{ if(i>=urls.length) return fail(); const s=document.createElement('script'); s.src=urls[i++]; s.onload=()=>window.Peer?ok():next(); s.onerror=next; document.head.appendChild(s); }; next();
+}
+function netStart(){
+  if(NET.peer||NET.status==='connecting') return; NET.status='connecting'; NET.err=''; netRefresh();
+  loadPeerLib(()=>{
+    const cfg=netCfg(); const opts=cfg&&cfg.host?{host:cfg.host,port:cfg.port,path:cfg.path||'/',secure:!!cfg.secure,debug:0}:{debug:0};
+    try{ NET.peer=new Peer('skywright-'+netMyCode(),opts); }catch(e){ return netFail('Online play is not available here.'); }
+    const t=setTimeout(()=>{ if(NET.status==='connecting') netFail("Couldn't reach the online service. Online play works when the game runs on its own website, like GitHub Pages."); },12000);
+    NET.peer.on('open',()=>{ clearTimeout(t); NET.status='online'; netRefresh(); });
+    NET.peer.on('connection',c=>netSetup(c,true));
+    NET.peer.on('error',e=>{ if(e.type==='unavailable-id'){ NET.peer.destroy(); NET.peer=null; NET.status='offline'; NET.code=netNewCode(); netLS('skywright_code',NET.code); netStart(); return; }
+      if(e.type==='peer-unavailable'){ NET.err='No one is online with that friend code.'; toast('👥 No one is online with that friend code.'); netRefresh(); return; }
+      if(NET.status==='connecting'){ clearTimeout(t); netFail("Couldn't reach the online service. Online play works when the game runs on its own website, like GitHub Pages."); } else { NET.err=String(e.type||e); netRefresh(); } });
+    NET.peer.on('disconnected',()=>{ try{ NET.peer.reconnect(); }catch(e){} });
+  },()=>netFail("Couldn't load the online library. Check your internet connection, and note that online play only works when the game runs on its own website, like GitHub Pages."));
+}
+function netFail(msg){ NET.status='error'; NET.err=msg; try{ NET.peer&&NET.peer.destroy(); }catch(e){} NET.peer=null; netRefresh(); }
+function netJoin(code){
+  code=(code||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(code.length!==6){ NET.err='Friend codes are 6 letters and numbers.'; netRefresh(); return; }
+  if(code===netMyCode()){ NET.err="That's your own code!"; netRefresh(); return; }
+  if(NET.status!=='online'){ NET.err='Not connected yet. Wait a moment and try again.'; netRefresh(); return; }
+  const c=NET.peer.connect('skywright-'+code,{reliable:true,metadata:{name:netMyName()}}); c._pendingHost=true; NET.err='Joining '+code+'...'; netRefresh(); netSetup(c,false);
+}
+function netLeave(){ for(const c of NET.conns){ try{ c.close(); }catch(e){} } NET.conns=[]; NET.host=null; NET.isHost=false; NET.players={}; netClearRemote(); netRefresh(); toast('👥 You left the session.'); }
+function netSetup(c,incoming){
+  c.on('open',()=>{ if(c._pendingHost){ const old=NET.host; NET.host=c; c._pendingHost=false; if(old&&old!==c){ try{ old.close(); }catch(e){} for(const k in NET.players) delete NET.players[k]; netClearRemote(); } }
+    if(!NET.conns.includes(c)) NET.conns.push(c); if(incoming) NET.isHost=true;
+    netSend(c,{t:'hello',id:NET.peer.id,name:netMyName(),...netMe()});
+    if(incoming){ const list=structs.filter(s=>s.alive&&s.owner==='player').slice(0,4000).map(s=>[s.type,s.x,s.y]); netSend(c,{t:'welcome',x:P.x,y:P.y,name:netMyName(),structs:list,players:Object.entries(NET.players).map(([id,p])=>({id,name:p.name}))}); }
+    netRefresh(); });
+  c.on('data',d=>netOnData(c,d));
+  c.on('close',()=>{ NET.conns=NET.conns.filter(x=>x!==c); const id=c.peer; if(NET.players[id]){ toast(`👥 ${NET.players[id].name} left.`); delete NET.players[id]; netRelay(c,{t:'bye',id}); }
+    if(c===NET.host){ NET.host=null; for(const k in NET.players) delete NET.players[k]; netClearRemote(); toast('👥 Disconnected from the host.'); } if(!NET.conns.length) NET.isHost=false; netRefresh(); });
+  c.on('error',()=>{});
+}
+function netSend(c,m){ try{ if(c.open) c.send(m); }catch(e){} }
+function netBroadcast(m){ m.id=m.id||(NET.peer&&NET.peer.id); for(const c of NET.conns) netSend(c,m); }
+function netRelay(from,m){ if(!NET.isHost) return; for(const c of NET.conns) if(c!==from) netSend(c,m); }
+function netMe(){ return {x:P.x,y:P.y,face:P.face,walk:P.walk,swing:P.swing,hp:Math.round(P.hp),maxHp:P.maxHp,lvl:P.lvl,w:bestGear('weapon')||'fists',alive:P.alive}; }
+function netOnData(c,m){
+  if(!m||typeof m!=='object') return; const id=m.id||c.peer; if(id===(NET.peer&&NET.peer.id)) return;
+  netRelay(c,m);
+  switch(m.t){
+    case 'hello': { const isNew=!NET.players[id]; NET.players[id]=Object.assign(NET.players[id]||{rx:m.x,ry:m.y},{name:String(m.name||'Friend').slice(0,20)},m); if(isNew){ toast(`👥 <b>${netEsc(NET.players[id].name)}</b> joined!`,'gold'); sfx('ready'); if(NET.isHost&&c.peer===id){ netSend(c,{t:'hello',id:NET.peer.id,name:netMyName(),...netMe()}); for(const [pid,p] of Object.entries(NET.players)) if(pid!==id) netSend(c,{t:'hello',id:pid,name:p.name,x:p.x,y:p.y}); } } netRefresh(); break; }
+    case 'welcome': { if(c!==NET.host) break; toast(`👥 Joined <b>${netEsc(m.name)}</b>'s world! Their bridges and buildings appear for you.`,'gold');
+      for(const [type,x,y] of m.structs||[]) netAddRemote(type,x,y);
+      const p=nearestWalkable(m.x+rnd(-2,2.5),m.y+rnd(-2,2.5),6); P.x=p.x; P.y=p.y; petEnt=null; snapCamera(); NET.err=''; netRefresh(); break; }
+    case 's': { const p=NET.players[id]; if(p){ Object.assign(p,m); p.last=G.t; } else NET.players[id]=Object.assign({name:'Friend',rx:m.x,ry:m.y,last:G.t},m); break; }
+    case 'chat': { const p=NET.players[id]; const nm=netEsc((p&&p.name)||m.name||'Friend'); NET.chat.push(`<b style="color:${netColor(id)}">${nm}:</b> ${netEsc(m.text)}`); if(NET.chat.length>40) NET.chat.shift(); toast(`💬 <b>${nm}:</b> ${netEsc(m.text)}`); netRefresh(); break; }
+    case 'build': netAddRemote(m.type,m.x,m.y); break;
+    case 'demo': { const s=structAt(m.x,m.y); if(s&&s.owner==='remote'){ removeStruct(s); lightCache=null; } break; }
+    case 'bye': if(NET.players[m.id]){ toast(`👥 ${netEsc(NET.players[m.id].name)} left.`); delete NET.players[m.id]; } netRefresh(); break;
+  }
+}
+function netEsc(s){ return String(s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])).slice(0,200); }
+function netAddRemote(type,x,y){ if(!STRUCTS[type]||STRUCTS[type].world||STRUCTS[type].special||!inB(x,y)||structAt(x,y)) return; const t=tiles[idx(x,y)]; const def=STRUCTS[type];
+  if(def.onVoid?t!==T.VOID:(isVoidT(t)||t===T.WATER)) return; if(def.solid&&Math.abs(P.x-(x+.5))<.8&&Math.abs(P.y-(y+.5))<.8) return; const d=decoAt(x,y); if(d) removeDeco(d);
+  addStruct(type,x,y,'remote',type==='farm'?{crop:null,t:0}:{}); lightCache=null; }
+function netClearRemote(){ for(const s of structs) if(s.alive&&s.owner==='remote') removeStruct(s); lightCache=null; }
+function netChat(text){ text=(text||'').trim().slice(0,160); if(!text||!NET.conns.length) return; netBroadcast({t:'chat',name:netMyName(),text}); NET.chat.push(`<b style="color:#f2c94c">You:</b> ${netEsc(text)}`); netRefresh(); }
+function netTick(dt){
+  if(!NET.conns.length) return;
+  NET.sendT-=dt; if(NET.sendT<=0){ NET.sendT=.1; netBroadcast(Object.assign({t:'s',name:netMyName()},netMe())); }
+  for(const [id,p] of Object.entries(NET.players)){ const k=Math.min(1,dt*10); p.rx=lerp(p.rx==null?p.x:p.rx,p.x,k); p.ry=lerp(p.ry==null?p.y:p.ry,p.y,k); }
+  const n=Object.keys(NET.players).length; const chip=$('netchip'); if(chip){ chip.textContent=`👥 ${n+1} playing`; chip.classList.toggle('hidden',!n); }
+}
+function netDrawables(list,vb){ for(const [id,p] of Object.entries(NET.players)){ if(p.rx==null||p.alive===false) continue; list.push({d:p.rx+p.ry,k:8,f:()=>{ const [x,y]=S(p.rx,p.ry); const sw=p.swing>0; drawCharacter(x,y,{shape:'player',col:netColor(id),col2:'#2a3a5a',size:1,face:p.face||1,walk:p.walk||0,weapon:WEAPON_COL[p.w]||'#e8c8a0',aim:(p.face||1)>0?(sw?-.6:.3):(sw?3.7:2.8),wlen:p.w==='fists'?8:20}); }}); } }
+function netLabels(){ ctx.textAlign='center'; for(const [id,p] of Object.entries(NET.players)){ if(p.rx==null) continue; const [x,y]=S(p.rx,p.ry); if(x<-50||x>VW+50||y<-80||y>VH+80) continue; const nm=`${p.name} · Lv ${p.lvl||1}`; ctx.font='bold 11px system-ui'; const w=ctx.measureText(nm).width; ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(x-w/2-4,y-64,w+8,15); ctx.fillStyle=netColor(id); ctx.fillText(nm,x,y-53); if(p.maxHp) hpBarAt(x,y-46,30,clamp(p.hp/p.maxHp,0,1),'#5ae070'); } }
+function netMapDots(g,mp){ for(const [id,p] of Object.entries(NET.players)){ if(p.x==null) continue; const [x,y]=mp(p.x,p.y); g.fillStyle=netColor(id); g.strokeStyle='#000'; g.lineWidth=1.5; g.beginPath(); g.arc(x,y,4,0,6.283); g.fill(); g.stroke(); } }
+function renderOnline(t,tabs,body){
+  t.textContent='Play with Friends'; netStart();
+  body.innerHTML=`<div id="netStatus" class="stn"></div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+   <div class="card" style="display:block"><div class="ds">YOUR FRIEND CODE</div><div id="netCode" style="font:800 34px ui-monospace,Menlo,monospace;letter-spacing:.18em;color:#f2c94c;margin:4px 0 8px">${netMyCode()}</div>
+     <button class="btn" id="netCopy">Copy code</button><div class="ds" style="margin-top:8px">Send this code to a friend so they can join your world.</div>
+     <div class="ds" style="margin-top:10px">YOUR NAME</div><input id="netName" maxlength="20" value="${netEsc(netMyName())}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #3a4c7a;background:#0f1730;color:#fff;font-size:16px"></div>
+   <div class="card" style="display:block"><div class="ds">JOIN A FRIEND</div><input id="netJoinCode" maxlength="7" placeholder="ABC123" style="width:100%;padding:10px;border-radius:8px;border:1px solid #3a4c7a;background:#0f1730;color:#fff;font:700 22px ui-monospace,monospace;letter-spacing:.15em;text-transform:uppercase">
+     <div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="netJoinBtn">Join</button><button class="btn alt" id="netLeaveBtn">Leave session</button></div>
+     <div class="ds" style="margin-top:8px">Joining takes you to your friend's island. You see each other, chat, and share anything either of you builds. Each of you keeps your own save.</div></div>
+  </div>
+  <h3>Players</h3><div id="netPlayers"></div>
+  <h3>Chat</h3><div id="netChatLog" style="background:#0f1730;border-radius:10px;padding:8px 10px;height:130px;overflow:auto;font-size:13px;line-height:1.6"></div>
+  <div style="display:flex;gap:8px;margin-top:8px"><input id="netChatIn" maxlength="160" placeholder="Say something... (Enter to send)" style="flex:1;padding:8px;border-radius:8px;border:1px solid #3a4c7a;background:#0f1730;color:#fff;font-size:16px"><button class="btn" id="netChatBtn">Send</button></div>`;
+  $('netCopy').onclick=()=>{ try{ navigator.clipboard.writeText(netMyCode()).then(()=>toast('Friend code copied!'),()=>toast('Copy failed: select the code and copy it by hand.')); }catch(e){ toast('Copy failed: select the code and copy it by hand.'); } };
+  $('netName').onchange=e=>{ const v=e.target.value.trim().slice(0,20); if(v){ NET.name=v; netLS('skywright_name',v); netBroadcast({t:'hello',name:v,...netMe()}); } };
+  $('netJoinBtn').onclick=()=>netJoin($('netJoinCode').value);
+  $('netJoinCode').onkeydown=e=>{ if(e.key==='Enter') netJoin(e.target.value); };
+  $('netLeaveBtn').onclick=netLeave;
+  const send=()=>{ netChat($('netChatIn').value); $('netChatIn').value=''; };
+  $('netChatBtn').onclick=send; $('netChatIn').onkeydown=e=>{ if(e.key==='Enter') send(); };
+  netRefresh();
+}
+function netRefresh(){
+  const st=$('netStatus'); if(!st) return;
+  const n=Object.keys(NET.players).length;
+  st.innerHTML=NET.status==='online'?`<b>● Online.</b> ${NET.conns.length?(NET.isHost?`Hosting ${n} friend${n===1?'':'s'}.`:'Connected to a friend\'s world.'):'Ready: share your code or join a friend.'}${NET.err?` <i>${netEsc(NET.err)}</i>`:''}`
+    :NET.status==='connecting'?'Connecting to the online service...':`<i>${netEsc(NET.err||'Offline.')}</i>`;
+  const pl=$('netPlayers'); if(pl) pl.innerHTML=`<div class="slot" style="display:inline-flex;margin:0 6px 6px 0"><span style="color:#f2c94c">●</span> ${netEsc(netMyName())} (you) · Lv ${P.lvl}</div>`+Object.entries(NET.players).map(([id,p])=>`<div class="slot" style="display:inline-flex;margin:0 6px 6px 0"><span style="color:${netColor(id)}">●</span> ${netEsc(p.name)} · Lv ${p.lvl||1}</div>`).join('');
+  const cl=$('netChatLog'); if(cl){ cl.innerHTML=NET.chat.join('<br>')||'<span style="color:#9aa8cc">No messages yet.</span>'; cl.scrollTop=cl.scrollHeight; }
+}
 // ===================== MAIN =====================
 function rle(arr){ let out=[],cur=arr[0],n=0; for(let i=0;i<arr.length;i++){ if(arr[i]===cur) n++; else { out.push(n); cur=arr[i]; n=1; } } out.push(n); return {f:arr[0],r:out}; }
 function unrle(o,arr){ let v=o.f,p=0; for(const n of o.r){ arr.fill(v,p,p+n); p+=n; v=v?0:1; } }
@@ -2842,6 +3076,8 @@ function loadGame(){
   for(const id of d.pk||[]){ const p=pickups.find(p=>p.id===id); if(p) p.taken=true; }
   for(const s of structs){ if(s.alive&&s.type==='chest'&&s.data.special&&G.flags[s.data.special]) removeStruct(s); }
   if(G.anchor) buildSkybridge();
+  for(const rec of G.ext.castles||[]){ const isl=islands[rec.id]; if(isl) applyCastle(isl,rec,false); }
+  if(d.P.spawn&&P.spawn==null){ const s=structAt(d.P.spawn[0],d.P.spawn[1]); if(s&&(s.type==='bed'||s.type==='ckeep')) P.spawn=s.id; }
   for(const k of ['g1','g2','g3','g4','g5']) if(!QMAP[k]) delete qs[k];
   if(d.ex){ const ew=d.exW||860; if(ew===W) unrle(d.ex,explored); else { const tmp=new Uint8Array(ew*ew); unrle(d.ex,tmp); for(let y=0;y<Math.min(ew,W);y++) for(let x=0;x<Math.min(ew,W);x++) explored[y*W+x]=tmp[y*ew+x]; } }
   rebuildGloom();
@@ -2874,7 +3110,7 @@ function update(dt){
 let last=performance.now();
 function frame(now){
   const dt=Math.min(.05,(now-last)/1000); last=now; G.t+=dt;
-  if(G.mode==='play'){ if(!isPaused()) update(dt); followCam(dt); updateHUD(dt); }
+  if(G.mode==='play'){ if(!isPaused()) update(dt); followCam(dt); updateHUD(dt); netTick(dt); }
   else titleCam(dt);
   shake=Math.max(0,shake-dt*2.5); flashRed=Math.max(0,flashRed-dt*3);
   try{ render(); }catch(err){ console.error(err); }
