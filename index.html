@@ -274,7 +274,7 @@ const ENEMIES = {
   golem:     {n:'Crystal Golem',hp:230,dmg:24,spd:1.4,range:1.5,cd:2.5,slam:true,xp:90,coins:[6,12],shape:'golem',col:'#6ac0d8',col2:'#2a5a7a',size:1.5,drops:{crystal:[1,3]}},
   stormguard:{n:'Stormguard',hp:120,dmg:17,spd:2.5,range:1.1,cd:1.6,dash:true,xp:80,coins:[6,12],shape:'knight',col:'#34437a',col2:'#f0e060',size:1.1},
   gloom:     {n:'Gloomling',hp:18,dmg:5,spd:2.9,range:.8,cd:1.0,xp:8,coins:[0,1],shape:'blob',col:'#24163a',col2:'#ff4060',size:.75},
-  warlord:   {n:'The Tempest Warlord',hp:1800,dmg:28,spd:2.2,range:1.7,cd:1.6,boss:true,xp:1000,coins:[0,0],shape:'warlord',col:'#26264a',col2:'#80e0ff',size:2.1},
+  warlord:   {n:'The Tempest Warlord',hp:18000,dmg:55,spd:2.6,range:1.7,cd:1.6,boss:true,xp:1000,coins:[0,0],shape:'warlord',col:'#26264a',col2:'#80e0ff',size:2.1},
 };
 
 // Island layout (hand-placed, shapes are procedural)
@@ -610,6 +610,8 @@ function genWorld(){
   if(typeof genExtras==='function') genExtras(r);
   if(typeof genProcQuests==='function') genProcQuests(r);
   if(typeof genGround==='function') genGround();
+  if(typeof genShrines==='function') genShrines();
+  if(typeof genDiamonds==='function') genDiamonds();
 }
 
 function makeVillage(isl,r){
@@ -952,6 +954,7 @@ function drawDeco(d){
     case 'iron':{ ell(g,x,y+1,14,6,'rgba(0,0,0,.2)'); poly(g,[x-13,y,x-9,y-13,x+2,y-18,x+12,y-9,x+13,y,x,y+4],'#7c7470'); poly(g,[x-9,y-13,x+2,y-18,x+12,y-9,x+1,y-6],'#9a908a');
       for(let k=0;k<5;k++) circ(g,x-8+hash2(d.x+k,d.y)*16,y-4-hash2(d.x,d.y+k)*11,2.2,'#e08a3a'); break;}
     case 'starrock': drawStarrock(d); break;
+    case 'diamond': drawDiamondOre(d); break;
     case 'gloomcrystal': drawGloomCrystal(d); break;
     case 'crystal':{ ell(g,x,y+1,12,5,'rgba(0,0,0,.2)'); poly(g,[x-10,y,x-7,y-22,x-2,y],'#7ad8f0','#dff',1); poly(g,[x-3,y+1,x+2,y-32,x+7,y+1],'#9ae8ff','#fff',1); poly(g,[x+4,y,x+10,y-18,x+12,y],'#b48aff','#eef',1); break;}
   }
@@ -985,6 +988,7 @@ function drawFlatStruct(s){
 function hpBarAt(x,y,w,frac,col){ ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(x-w/2-1,y-1,w+2,6); ctx.fillStyle=col; ctx.fillRect(x-w/2,y,w*frac,4); }
 function drawStruct(s){
   const g=ctx; const [cx,cy]=S(s.x+s.w/2,s.y+s.h/2);
+  if(s.type==='shrine'){ drawShrine(s,cx,cy); return; }
   if(drawGroundStruct(s,cx,cy)){ if(s.owner==='player'&&s.hp<s.maxHp) hpBarAt(cx,cy-36,28,s.hp/s.maxHp,'#e0a040'); return; }
   switch(s.type){
     case 'wall_wood': iso3(g,s.x,s.y,1,1,.05,0,26,'#b88a5a','#8a6038','#6e4a2a'); g.strokeStyle='rgba(60,35,15,.5)'; g.lineWidth=1; for(let k=1;k<3;k++){ const p=S(s.x+.05,s.y+.95),q=S(s.x+.95,s.y+.95),r=S(s.x+.95,s.y+.05); g.beginPath(); g.moveTo(p[0],p[1]-k*9); g.lineTo(q[0],q[1]-k*9); g.lineTo(r[0],r[1]-k*9); g.stroke(); } break;
@@ -1376,7 +1380,7 @@ function clearCamp(camp){
   camp.cleared=true; const s=camp.totem; removeStruct(s); burst(s.x+.5,s.y+.5,'#ffd040',30,4); shake=.8; sfx('quest');
   const t=camp.tier; const loot={coins:Math.round((10+t*18)*camp.mult)}; if(t<=1){loot.wood=8;loot.stone=8;loot.arrows=6;} else if(t===2){loot.iron=6;loot.petal=4;loot.bread=2;} else if(t===3){loot.iron=8;loot.glowcap=4;loot.potion=1;} else {loot.crystal=6;loot.iron=6;loot.potion=2;}
   const fort=camp.fort?forts.find(f=>f.key===camp.fort):null;
-  if(camp.keep){ loot.coins*=6; loot.potion=(loot.potion||0)+3; loot.stardust=3+t; loot.crystal=(loot.crystal||0)+4*t; loot.iron=(loot.iron||0)+5*t; }
+  if(camp.keep){ loot.diamond=(loot.diamond||0)+2; loot.coins*=6; loot.potion=(loot.potion||0)+3; loot.stardust=3+t; loot.crystal=(loot.crystal||0)+4*t; loot.iron=(loot.iron||0)+5*t; }
   addStruct('chest',s.x,s.y,'world',{loot,camp:camp.key});
   if(camp.heart){ onCampCleared(camp); gainXP(500); if(camp.mother&&fort) fort.cleared=true; }
   else if(camp.post&&fort){ const left=fortPostsLeft(fort.key), n=fort.posts.length; toast(`🗼 Watchpost destroyed (${n-left}/${n})`,'gold'); gainXP(40+t*35);
@@ -1451,22 +1455,31 @@ function enemyStrike(e,d){
   else if(e.atkKind==='dash'){ const dx=P.x-e.x, dy=P.y-e.y, l=Math.hypot(dx,dy)||1; e.dashT=.32; e.dvx=dx/l*12; e.dvy=dy/l*12; e.dashHit=false; sfx('dash'); }
 }
 function updateBoss(e,dt,d){
-  const f=e.hp/e.maxHp, ph=f>.6?1:f>.3?2:3;
-  if(ph!==e.phase){ e.phase=ph; shake=1.2; toast(ph===2?'⚡ The Warlord calls down lightning! Watch the red circles.':'⚡ The Warlord summons his Stormguard!','red'); sfx('boom'); }
-  e.skillCd-=dt; e.summonCd-=dt;
+  // 10x harder: 18,000 HP, four phases, heavy hits, constant pressure
+  const f=e.hp/e.maxHp, ph=f>.75?1:f>.5?2:f>.25?3:4;
+  if(ph!==e.phase){ e.phase=ph; shake=1.5; sfx('boom');
+    toast(['','','⚡ The Warlord calls down lightning! Watch the red circles.','⚡ The Warlord summons his Stormguard and moves faster!','⚡⚡ THE STORM RAGES! The Warlord is enraged and the sky splits open!'][ph],'red');
+    if(ph>=3){ for(let k=0;k<ph;k++){ const p=nearestWalkable(e.x+rnd(-4,4),e.y+rnd(-4,4),3); spawnEnemy('stormguard',p.x,p.y,{summoned:true,mult:1.5}); } } }
+  e.skillCd-=dt; e.summonCd-=dt; e.boltCd=(e.boltCd==null?6:e.boltCd)-dt;
   if(e.windup>0){ e.windup-=dt; return; }
   const dx=P.x-e.x, dy=P.y-e.y;
-  if(P.alive && d>1.6) steer(e,dx,dy,e.spd*(ph===3?1.3:1),dt);
+  if(P.alive && d>1.6) steer(e,dx,dy,e.spd*[1,1,1.1,1.25,1.45][ph],dt);
   if(!P.alive) return;
-  if(d<2.6 && e.atkCd<=0){ addTele(e.x,e.y,2.6,.75,e.dmg,'enemy'); e.atkCd=ph===3?1.6:2.2; e.windup=.75; return; }
+  if(d<2.8 && e.atkCd<=0){ addTele(e.x,e.y,ph>=4?3.4:2.8,ph>=4?.6:.7,e.dmg,'enemy'); if(ph>=3) addTele(e.x,e.y,5,1.25,e.dmg*.6,'enemy'); e.atkCd=[0,2,1.7,1.4,1.05][ph]; e.windup=ph>=4?.6:.7; return; }
+  // storm dash: lunges at you from range
+  if(ph>=2 && d>4 && d<11 && e.atkCd<=0 && Math.random()<dt*1.2){ const l=Math.hypot(dx,dy)||1; e.dashT=.38; e.dvx=dx/l*16; e.dvy=dy/l*16; e.dashHit=false; e.atkCd=2.5; addTele(P.x,P.y,1.6,.45,e.dmg*.8,'enemy'); sfx('dash'); }
+  if(e.dashT>0){ e.dashT-=dt; moveEnt(e,e.dvx*dt,e.dvy*dt,.4); return; }
   if(e.skillCd<=0){
-    if(ph>=2 && Math.random()<.55){ addTele(P.x,P.y,1.2,1.1,22,'enemy',true); for(let k=0;k<3+ph*2;k++) addTele(P.x+rnd(-3.5,3.5),P.y+rnd(-3.5,3.5),1.2,1.1+Math.random()*.4,22,'enemy',true); sfx('charge'); }
-    else { const n=ph===1?10:14, off=Math.random()*6; for(let k=0;k<n;k++){ const a=off+k/n*6.283; projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*5.5,vy:Math.sin(a)*5.5,dmg:14,from:'enemy',type:'storm',life:3,r:.45}); } sfx('throw'); }
-    e.skillCd=ph===1?4.2:ph===2?3.4:2.8; e.windup=.4;
+    const r=Math.random();
+    if(ph>=2 && r<.5){ addTele(P.x,P.y,1.4,1,45,'enemy',true); for(let k=0;k<5+ph*3;k++) addTele(P.x+rnd(-4.5,4.5),P.y+rnd(-4.5,4.5),1.3,.95+Math.random()*.5,45,'enemy',true); sfx('charge'); }
+    else { const rings=ph>=4?3:ph>=2?2:1; for(let w=0;w<rings;w++){ const n=ph===1?14:20, off=Math.random()*6, sp=5.5+w*1.3; for(let k=0;k<n;k++){ const a=off+k/n*6.283; projectiles.push({x:e.x,y:e.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,dmg:30,from:'enemy',type:'storm',life:3.5,r:.45}); } } sfx('throw'); }
+    e.skillCd=[0,3.2,2.6,2.1,1.6][ph]; e.windup=.35;
   }
-  if(ph===3 && e.summonCd<=0){ for(let k=0;k<2;k++){ const p=nearestWalkable(e.x+rnd(-3,3),e.y+rnd(-3,3),3); spawnEnemy('stormguard',p.x,p.y,{summoned:true}); } e.summonCd=16; }
+  // aimed storm bolts that track where you are going
+  if(e.boltCd<=0&&ph>=1){ e.boltCd=[0,5,4,3,2][ph]; const lead=.5; const tx=P.x+(P.lastDir?P.lastDir.x:0)*lead*4, ty=P.y+(P.lastDir?P.lastDir.y:0)*lead*4; const ax=tx-e.x, ay=ty-e.y, l=Math.hypot(ax,ay)||1;
+    for(const sp of [-.18,0,.18]){ const c=Math.cos(sp), s2=Math.sin(sp); const vx=(ax*c-ay*s2)/l*9, vy=(ax*s2+ay*c)/l*9; projectiles.push({x:e.x,y:e.y,vx,vy,dmg:38,from:'enemy',type:'storm',life:2.5,r:.5}); } }
+  if(ph>=3 && e.summonCd<=0){ for(let k=0;k<ph;k++){ const p=nearestWalkable(e.x+rnd(-4,4),e.y+rnd(-4,4),3); spawnEnemy('stormguard',p.x,p.y,{summoned:true,mult:1.5}); } e.summonCd=ph>=4?10:14; }
 }
-
 // --------- projectiles, effects, particles
 function updateProjectiles(dt){
   for(const p of projectiles){
@@ -1565,7 +1578,7 @@ function updateBossTrigger(){
   const isl=islandAt(P.x,P.y);
   if(isl && isl.key==='storm' && dist(P.x,P.y,isl.x,isl.y)<11){
     G.boss=spawnEnemy('warlord',isl.x+.5,isl.y+.5,{name:'The Tempest Warlord'});
-    for(let k=0;k<2;k++){ const p=nearestWalkable(isl.x+(k?3:-3),isl.y-2,3); spawnEnemy('stormguard',p.x,p.y,{summoned:true}); }
+    for(let k=0;k<4;k++){ const p=nearestWalkable(isl.x+(k%2?3:-3),isl.y+(k<2?-2:2),3); spawnEnemy('stormguard',p.x,p.y,{summoned:true,mult:1.5}); }
     toast('⚡ THE TEMPEST WARLORD: "Another builder? I will scatter you like the rest!"','red'); shake=1.5; sfx('boom');
   }
 }
@@ -1593,6 +1606,7 @@ function findInteract(){
     else if(s.type==='plinth') label='Inspect the Anchor Plinth';
     if(label){bd=d;best={kind:'struct',o:s,label};} }
   const gi=groundInteract(bd); if(gi){ best=gi; bd=gi.d; }
+  const si=shrineInteract(bd); if(si){ best=si; bd=si.d; }
   const ex=extraInteract(bd); if(ex&&(ex.d<bd||!best)) best=ex;
   return best;
 }
@@ -1799,6 +1813,9 @@ function objProgress(q,i){
     case 'pickup': return [G.flags['pickup_'+o.id]||G.flags[o.id]?1:0,1];
     case 'anchor': return [G.anchor?1:0,1];
     case 'raid': return [G.raidDone.petal?1:0,1];
+    case 'villages': return [Math.min(villagesVisited(),o.n),o.n];
+    case 'shrines': return [Math.min(G.ext.shrines.length,o.n),o.n];
+    case 'forts': return [Math.min(forts.filter(f=>f.cleared&&!f.ground).length,o.n),o.n];
     case 'hearts': return [camps.filter(c=>c.heart&&!c.mother&&c.cleared).length,5];
   }
   return [0,1];
@@ -1885,6 +1902,9 @@ function questTarget(){
     else if(o.type==='pickup'){ const p=pickups.find(p=>p.id===o.id); if(p) v={x:p.x,y:p.y}; else { const s=structs.find(s=>s.alive&&s.data.special===o.id); if(s) v={x:s.x+.5,y:s.y+.5}; } }
     else if(o.type==='anchor') v=plinthPos;
     else if(o.type==='raid'){ const vv=villages.find(v=>v.key==='petal'); v={x:vv.x,y:vv.y}; }
+    else if(o.type==='villages') v=nearestUnvisitedVillage();
+    else if(o.type==='shrines') v=nearestShrine();
+    else if(o.type==='forts') v=nearestFort();
     else if(o.type==='hearts'){ let bc=null,bd=1e9; for(const c of camps){ if(!c.heart||c.mother||c.cleared) continue; const d=dist(c.x,c.y,P.x,P.y); if(d<bd){bd=d;bc=c;} } if(bc) v={x:bc.x,y:bc.y}; }
     else if(o.type==='farm'){ const s=structs.find(s=>s.alive&&s.type==='farm'); if(s) v={x:s.x+.5,y:s.y+.5}; }
     break; }
@@ -1972,9 +1992,9 @@ function renderPanel(tab){
     const near=nearStation(craftTab);
     let h=`<div class="stn">${craftTab==='hand'?'No station needed.':near?`<b>✔ ${STATION_NAMES[craftTab]} nearby.</b>`:`<i>✖ Stand near a ${STATION_NAMES[craftTab]} to craft these.</i> ${craftTab==='workbench'||craftTab==='campfire'||craftTab==='forge'?(craftTab==='forge'?'(No village has a forge. Build your own with B: it is expensive and needs level 6.)':'(Build one with B, or find one in a village.)'):''}`}</div><div class="grid">`;
     for(const r of RECIPES.filter(r=>r.st===craftTab)){
-      const it=ITEMS[r.id]; const owned=it.gear&&P.inv[r.id]>0; const can=hasCost(r.cost)&&near&&!owned;
+      const it=ITEMS[r.id]; const owned=it.gear&&P.inv[r.id]>0; const can=hasCost(r.cost)&&near&&!owned&&!(r.minLvl&&P.lvl<r.minLvl);
       let ds=it.gear==='weapon'?`Damage ${it.dmg}`:it.gear==='pick'?`Mines tier ${it.tier} (${['','stone','iron','crystal'][it.tier]})`:it.gear==='axe'?`Chop power ${it.pow}`:it.gear==='armor'?`Blocks ${Math.round(it.armor*100)}% damage`:it.gear==='bow'?'Right-click to shoot. Needs arrows.':it.heal?`Heals ${it.heal}`:'';
-      if(r.qty>1) ds+=` · Makes ${r.qty}`;
+      if(r.qty>1) ds+=` · Makes ${r.qty}`; if(r.minLvl) ds+=` · <span style="color:${P.lvl>=r.minLvl?'#6fe08a':'#ff7a7a'}">Requires level ${r.minLvl}</span>`;
       h+=`<div class="card"><div class="big">${it.i}</div><div style="flex:1"><div class="nm">${it.n}</div><div class="ds">${ds}</div><div class="cost">${costHTML(r.cost)}</div>
       <button class="btn" ${can?'':'disabled'} onclick="craft('${r.id}')">${owned?'Owned':'Craft'}</button></div></div>`;
     }
@@ -2003,7 +2023,7 @@ function renderPanel(tab){
   } else if(panelOpen==='map'){
     t.textContent='World Map';
     const w=Math.min(820,window.innerWidth*.9-40), h=Math.min(520,window.innerHeight*.86-150);
-    b.innerHTML=`<canvas id="bigmap" width="${w}" height="${h}" style="cursor:grab"></canvas><div class="legend"><span>🟡 You</span><span>🏠 Village</span><span style="color:#ff7a7a">☠ Camp</span><span>🏰 Boss fortress</span><span>✔ Cleared</span><span style="color:#f2c94c">★ Quest target</span><span>Scroll to zoom · drag to pan · <a href="#" id="bmCenter" style="color:#9ad0ff">center on me</a></span></div>`;
+    b.innerHTML=`<canvas id="bigmap" width="${w}" height="${h}" style="cursor:grab"></canvas><div class="legend"><span>🟡 You</span><span>🏠 Village</span><span style="color:#ff7a7a">☠ Camp</span><span>🏰 Boss fortress</span><span>🌀 Wind Shrine</span><span>✔ Cleared</span><span style="color:#f2c94c">★ Quest target</span><span>Scroll to zoom · drag to pan · <a href="#" id="bmCenter" style="color:#9ad0ff">center on me</a></span></div>`;
     if(!tab||!BM.init){ BM.cx=P.x; BM.cy=P.y; BM.s=1.6; BM.init=true; }
     const cv=$('bigmap'); const redraw=()=>drawMap(cv,BM.cx,BM.cy,BM.s,true); redraw();
     cv.onwheel=e=>{ e.preventDefault(); BM.s=clamp(BM.s*(e.deltaY<0?1.2:1/1.2),.35,8); redraw(); };
@@ -2029,7 +2049,7 @@ function renderPanel(tab){
 function costHTML(c){ return Object.keys(c).map(k=>`<span class="${cnt(k)>=c[k]?'ok':'no'}">${k==='coins'?'🪙':ITEMS[k].i} ${cnt(k)}/${c[k]}</span>`).join(''); }
 function nearStation(st){ if(st==='hand') return true; for(const s of structs){ if(s.alive&&STRUCTS[s.type].station===st&&dist(s.x+.5,s.y+.5,P.x,P.y)<3.6) return true; } return false; }
 function craft(id){
-  const r=RECIPES.find(r=>r.id===id); if(!r||!hasCost(r.cost)||!nearStation(r.st)) return; const it=ITEMS[id]; if(it.gear&&P.inv[id]>0) return;
+  const r=RECIPES.find(r=>r.id===id); if(!r||!hasCost(r.cost)||!nearStation(r.st)||(r.minLvl&&P.lvl<r.minLvl)) return; const it=ITEMS[id]; if(it.gear&&P.inv[id]>0) return;
   payCost(r.cost); give(id,r.qty||1); sfx('build'); toast(`Crafted ${it.i} ${it.n}${r.qty>1?' x'+r.qty:''}`); checkQuests(); renderPanel();
 }
 function buy(i){ const s=SHOP.buy[i]; if(P.coins<s.p) return; P.coins-=s.p; give(s.it,s.q); sfx('coin'); renderPanel(); }
@@ -2062,6 +2082,7 @@ function drawMap(cv,cx,cy,s,big){
   for(const f of forts){ if(!ex(f.x,f.y)) continue; const [x,y]=mp(f.x,f.y); if(!onC(x,y)) continue; g.font=(big?20:14)+'px serif'; g.fillText(f.cleared?'🏳️':'🏰',x,y); if(big&&s>=.8){ g.font='bold 11px system-ui'; g.fillStyle=f.cleared?'#8fd08f':'#ffb080'; g.strokeStyle='#000'; g.lineWidth=3; const lb=f.name+(f.cleared?' ✔':''); g.strokeText(lb,x,y+15); g.fillText(lb,x,y+15);} }
   for(const c of camps){ if(c.fort||!ex(c.x,c.y)) continue; const [x,y]=mp(c.x,c.y); if(!onC(x,y)) continue; g.font='bold '+(big?14:11)+'px system-ui'; g.fillStyle=c.cleared?'#8fd08f':'#ff6060'; g.fillText(c.cleared?'✔':'☠',x,y); if(big&&(s>=2.6||c.shard)){ g.font='11px system-ui'; g.fillStyle='#ffd0d0'; g.strokeStyle='#000'; g.lineWidth=3; g.strokeText(c.name+(c.shard&&!c.chiefDead?' 🔷':''),x,y+13); g.fillText(c.name+(c.shard&&!c.chiefDead?' 🔷':''),x,y+13);} }
   if(ex(plinthPos.x,plinthPos.y)){ const [x,y]=mp(plinthPos.x,plinthPos.y); g.font=(big?14:10)+'px serif'; g.fillText('🔷',x,y); }
+  for(const sh of shrines){ if(!big&&!ex(sh.x,sh.y)) continue; const [x,y]=mp(sh.x,sh.y); if(!onC(x,y)) continue; g.font=(big?16:12)+'px serif'; g.fillText(shrineAttuned(sh)?'✨':'🌀',x,y); if(big&&s>=.9){ g.font='bold 11px system-ui'; g.fillStyle='#bfe8ff'; g.strokeStyle='#000'; g.lineWidth=3; g.strokeText(sh.name,x,y+15); g.fillText(sh.name,x,y+15);} }
   const st=islandByKey.storm; if(big||ex(st.x,st.y)){ const [x,y]=mp(st.x,st.y); g.font=(big?20:13)+'px serif'; g.fillText('🌀',x,y); }
   const tg=questTarget(); if(tg){ let [x,y]=mp(tg.x,tg.y); if(true){ if(big){ x=clamp(x,12,w-12); y=clamp(y,12,h-12); } else { const dx=x-w/2, dy=y-h/2, l=Math.hypot(dx,dy); if(l>w/2-12){ x=w/2+dx/l*(w/2-12); y=h/2+dy/l*(w/2-12);} } } g.font='bold '+(big?20:16)+'px system-ui'; g.fillStyle='#f2c94c'; g.strokeStyle='#4a3000'; g.lineWidth=3; g.strokeText('★',x,y); g.fillText('★',x,y); }
   for(const e of enemies){ if(big||e.dead) continue; if(dist(e.x,e.y,P.x,P.y)<30){ const [x,y]=mp(e.x,e.y); g.fillStyle=e.chief||e.type==='warlord'?'#ffa030':'#ff4a4a'; g.fillRect(x-1.5,y-1.5,3,3); } }
@@ -2080,7 +2101,7 @@ function updateHUD(dt){
   const tl=timeLabel(); $('clock').textContent=`${isNight()?'🌙':G.time>.58&&G.time<.7?'🌇':'☀️'} Day ${G.day} · ${tl}`;
   const isl=islands[islandOf[idx(clamp(Math.floor(P.x),0,W-1),clamp(Math.floor(P.y),0,W-1))]];
   $('islname').textContent=isl?(isl.kind==='ground'?`The Gloomlands · ${G.ext.groundClean?'Cleansed':'Gloom '+Math.round((G.gloomHere||0)*100)+'%'} · Danger ${'★'.repeat(landing?groundTier(P.x):5)}`:`${isl.name}${isl.tier>0?' · Danger '+'★'.repeat(isl.tier):' · Safe'}`):'Open sky';
-  const order=['wood','stone','fiber','berries','seeds','wheat','iron','crystal','petal','glowcap','shard'];
+  const order=['wood','stone','fiber','berries','seeds','wheat','iron','crystal','diamond','petal','glowcap','shard'];
   $('res').innerHTML=order.filter(k=>(P.inv[k]||0)>0||['wood','stone','fiber'].includes(k)).map(k=>`<div class="chip">${ITEMS[k].i} ${P.inv[k]||0}</div>`).join('');
   const it=P.alive&&!isPaused()?findInteract():null; const a=$('action');
   if(it){ a.classList.remove('hidden'); a.innerHTML=`<kbd>E</kbd> ${it.label}`; } else a.classList.add('hidden');
@@ -2191,7 +2212,7 @@ const RELIC_NOUN=['Idol','Horn','Compass','Crown','Chalice','Lantern','Mask','Ke
 const RELIC_REWARDS=[[5,'Max HP +15',()=>{P.maxHp+=15;P.hp+=15;}],[10,'+10% damage',()=>{G.ext.dmgBonus+=.1;}],[15,'Max HP +20',()=>{P.maxHp+=20;P.hp+=20;}],[20,'+10% damage',()=>{G.ext.dmgBonus+=.1;}],[30,'Max HP +30',()=>{P.maxHp+=30;P.hp+=30;}],[40,'+15% damage and 1000 coins',()=>{G.ext.dmgBonus+=.15;give('coins',1000);}]];
 const RELIC_TOTAL=40;
 let critters=[], balloons=[], meteors=[], extT=0, petEnt=null;
-function freshExt(){ return {pets:[],pet:null,fishLog:{},fishCount:0,bounties:[],bountyTaken:{},ach:{},visited:[],relics:0,dmgBonus:0,balloons:0,bountiesDone:0,stardust:0,tips:{}}; }
+function freshExt(){ return {shrines:[],pets:[],pet:null,fishLog:{},fishCount:0,bounties:[],bountyTaken:{},ach:{},visited:[],relics:0,dmgBonus:0,balloons:0,bountiesDone:0,stardust:0,tips:{}}; }
 G.ext=freshExt();
 
 // ---------- generation (called from genWorld)
@@ -2334,8 +2355,8 @@ function drawBalloon(b){ const [x,y]=S(b.x,b.y); const h=78+Math.sin(G.t*2+b.x)*
 
 // ---------- meteor showers
 function updateMeteors(dt){
-  if(G.time>.68&&G.time<.7&&G.meteorRoll!==G.day){ G.meteorRoll=G.day; G.meteorNight=(G.day>=3&&Math.random()<.35)?G.day:-1; if(G.meteorNight===G.day) toast('☄️ A meteor shower lights up the night! Fallen stars leave Starrock (needs a Stone Pickaxe).','gold'); }
-  if(G.meteorNight===G.day&&isNight()&&P.alive){ G.meteorT=(G.meteorT==null?3:G.meteorT)-dt; if(G.meteorT<=0){ G.meteorT=rnd(4,8);
+  if(G.time>.68&&G.time<.7&&G.meteorRoll!==G.day){ G.meteorRoll=G.day; G.meteorNight=(G.day>=4&&G.day-(G.ext.lastMeteor||-99)>=5&&Math.random()<.12)?G.day:-1; if(G.meteorNight===G.day) G.ext.lastMeteor=G.day; if(G.meteorNight===G.day) toast('☄️ A meteor shower lights up the night! Fallen stars leave Starrock (needs a Stone Pickaxe).','gold'); }
+  if(G.meteorNight===G.day&&isNight()&&P.alive){ G.meteorT=(G.meteorT==null?3:G.meteorT)-dt; if(G.meteorT<=0){ G.meteorT=rnd(8,14);
     for(let tr=0;tr<20;tr++){ const a=Math.random()*6.283, r=rnd(4,13); const tx=Math.floor(P.x+Math.cos(a)*r), ty=Math.floor(P.y+Math.sin(a)*r);
       if(!inB(tx,ty)||!isLand(tx,ty)||structAt(tx,ty)||decoAt(tx,ty)) continue;
       meteors.push({x:tx+.5,y:ty+.5,t:0,dur:1.4}); addTele(tx+.5,ty+.5,1.3,1.4,22,'enemy'); break; } } }
@@ -2395,6 +2416,7 @@ const ACH=[
   ['beacon5','Lightbringer','Build 5 Purifier Beacons',()=>structs.filter(s=>s.alive&&s.type==='beacon').length>=5,800],
   ['hearts','Heartbreaker','Destroy all 5 Gloom Hearts',()=>camps.filter(c=>c.heart&&!c.mother&&c.cleared).length>=5,2000],
   ['mother','Dawn Below','Defeat the Gloom Mother',()=>!!G.ext.groundClean,5000],
+  ['shrines','Windbearer','Claim all 5 Storm Seals',()=>G.ext.shrines.length>=5,1000],
   ['isl50','Wanderer','Discover 50 islands',()=>G.ext.visited.length>=50,100],
   ['isl250','Explorer','Discover 250 islands',()=>G.ext.visited.length>=250,400],
   ['isl1000','Every Last Rock','Discover all 1,000 islands',()=>G.ext.visited.length>=1000,3000],
@@ -2437,7 +2459,7 @@ function updateExtras(dt){
   extT-=dt; if(extT>0) return; extT=.5;
   const isl=islandAt(P.x,P.y);
   if(isl&&!G.ext.visited.includes(isl.id)){ G.ext.visited.push(isl.id);
-    if(isl.id!==islandByKey.home.id){ if(isl.village) toast(`🏠 Discovered the village of <b>${isl.village.name}</b>!`,'gold'); else if(isl.fortObj&&!isl.fortObj.cleared) toast(`⚔ Boss fortress: <b>${isl.fortObj.name}</b> (Danger ${'★'.repeat(isl.tier)}). Destroy its ${isl.fortObj.posts.length} watchposts to break the keep's seal, then defeat <b>${isl.fortObj.bossName}</b>.`,'red'); else toast(`🧭 Discovered ${isl.name}${isl.tier?' · Danger '+'★'.repeat(isl.tier):''}`); gainXP(isl.village?30:5+isl.tier*3); } }
+    if(isl.id!==islandByKey.home.id){ if(isl.village) toast(`🏠 Discovered the village of <b>${isl.village.name}</b>!`,'gold'); else if(isl.shrine&&!shrineAttuned(isl.shrine)) toast(`🌀 You found the <b>${isl.shrine.name}</b>! Touch it (E) to begin its trial.`,'gold'); else if(isl.fortObj&&!isl.fortObj.cleared) toast(`⚔ Boss fortress: <b>${isl.fortObj.name}</b> (Danger ${'★'.repeat(isl.tier)}). Destroy its ${isl.fortObj.posts.length} watchposts to break the keep's seal, then defeat <b>${isl.fortObj.bossName}</b>.`,'red'); else toast(`🧭 Discovered ${isl.name}${isl.tier?' · Danger '+'★'.repeat(isl.tier):''}`); gainXP(isl.village?30:5+isl.tier*3); } }
   if(qDone('t10')&&!G.ext.tips.t10){ G.ext.tips.t10=1; setTimeout(()=>toast('💡 New things to do: <b>Bounty Boards</b> in every village, a <b>Fishing Rod</b> at the Workbench, wild <b>pets</b> to befriend, and 40 hidden <b>relics</b>. Press <kbd>L</kbd> for your Journal.'),5000); }
   checkAchievements();
 }
@@ -2467,7 +2489,7 @@ function renderJournal(t,tabs,body){
   else if(journalTab==='pets'){ h+=`<div class="stn">Find wild animals on wild islands and feed them their favorite food (press E next to them). Your active pet follows you and fights.</div><div class="grid">`;
     for(const k in PETS){ const pd=PETS[k]; const own=G.ext.pets.includes(k); h+=`<div class="card"><div class="big">${own?pd.i:'❔'}</div><div style="flex:1"><div class="nm">${own?pd.n:'Unknown pet'}</div><div class="ds">${own?pd.d:`Lives in ${BIOMES[pd.biomes[0]].name} areas. Loves ${ITEMS[pd.treat].n}.`}</div>${own?`<button class="btn" ${G.ext.pet===k?'disabled':''} onclick="G.ext.pet='${k}';petEnt=null;renderPanel()">${G.ext.pet===k?'Active':'Make active'}</button>`:''}</div></div>`; } h+='</div>'; }
   else { const tiers={}; for(const id of G.ext.visited){ const t=islands[id].tier; tiers[t]=(tiers[t]||0)+1; }
-    h+=`<div class="stn">Islands discovered: <b>${G.ext.visited.length}</b> / ${islands.length}</div><div style="font-size:14px;line-height:2">Villages visited: ${villagesVisited()} / ${villages.length}<br>Boss fortresses conquered: ${forts.filter(f=>f.cleared&&!f.ground).length} / ${forts.filter(f=>!f.ground).length}<br>Gloom Hearts destroyed: ${camps.filter(c=>c.heart&&!c.mother&&c.cleared).length} / 5<br>Camps cleared: ${camps.filter(c=>c.cleared&&!c.fort).length} / ${camps.filter(c=>!c.fort).length}<br>Bridge planks built: ${G.stats.bridges||0}<br>Structures built: ${G.stats.built}<br>Enemies defeated: ${G.stats.kills}<br>Bounties completed: ${G.ext.bountiesDone}<br>Balloons popped: ${G.ext.balloons}<br>Stardust collected: ${G.ext.stardust}</div>`; }
+    h+=`<div class="stn">Islands discovered: <b>${G.ext.visited.length}</b> / ${islands.length}</div><div style="font-size:14px;line-height:2">Villages visited: ${villagesVisited()} / ${villages.length}<br>Boss fortresses conquered: ${forts.filter(f=>f.cleared&&!f.ground).length} / ${forts.filter(f=>!f.ground).length}<br>Wind Shrines attuned: ${G.ext.shrines.length} / ${shrines.length}<br>Gloom Hearts destroyed: ${camps.filter(c=>c.heart&&!c.mother&&c.cleared).length} / 5<br>Camps cleared: ${camps.filter(c=>c.cleared&&!c.fort).length} / ${camps.filter(c=>!c.fort).length}<br>Bridge planks built: ${G.stats.bridges||0}<br>Structures built: ${G.stats.built}<br>Enemies defeated: ${G.stats.kills}<br>Bounties completed: ${G.ext.bountiesDone}<br>Balloons popped: ${G.ext.balloons}<br>Stardust collected: ${G.ext.stardust}</div>`; }
   body.innerHTML=h;
 }
 // ===================== THE GLOOMLANDS (the ground below) =====================
@@ -2677,6 +2699,108 @@ QUESTS.push(
    prog:"The Mother waits in the far east.",done:"It's over. Truly over. Thank you, Skywright.",reward:{xp:3000,coins:1000,items:{sunblade:1}}}
 );
 for(const q of QUESTS) QMAP[q.id]=q;
+// ===================== WIND SHRINES & THE LONG ROAD TO THE WARLORD =====================
+// Before the Sky Anchor wakes you must: visit 15 villages, win the trials of 5 Wind Shrines, and conquer 2 boss fortresses.
+STRUCTS.shrine={solid:true,world:true,light:3.5};
+let shrines=[];
+function genShrines(){
+  shrines=[]; const r=mulberry32(SEED+4242);
+  const used=new Set();
+  for(let k=0;k<5;k++){
+    const a0=k/5*6.283+.35, a1=a0+6.283/5;
+    let pickIsl=null, bestScore=-1e9;
+    for(let pass=0;pass<3&&!pickIsl;pass++)
+    for(const isl of islands){ if(isl.kind!=='res'||isl.r<(pass===2?3:pass===1?4:5)||used.has(isl.id)||isl.treasure) continue;
+      const d=dist(isl.x,isl.y,CX,CY); if(d<(pass?170:210)||d>(pass?390:330)) continue;
+      let a=Math.atan2(isl.y-CY,isl.x-CX); if(a<0) a+=6.283; const inSec=a1>6.283?(a>=a0||a<a1-6.283):(a>=a0&&a<a1);
+      if(!inSec) continue; const sc=isl.r*3-Math.abs(d-270)+r()*30; if(sc>bestScore){ bestScore=sc; pickIsl=isl; } }
+    if(!pickIsl) continue; used.add(pickIsl.id);
+    const cx=Math.floor(pickIsl.x), cy=Math.floor(pickIsl.y);
+    for(let y=cy-3;y<=cy+3;y++)for(let x=cx-3;x<=cx+3;x++){ if(!inB(x,y)||islandOf[idx(x,y)]!==pickIsl.id) continue; const d=decoAt(x,y); if(d) removeDeco(d); const st=structAt(x,y); if(st&&st.type!=='shrine') removeStruct(st); if(dist(x,y,cx,cy)<2.6&&!voidNeighbor(x,y)&&tiles[idx(x,y)]!==T.WATER) tiles[idx(x,y)]=T.PATH; }
+    for(const p of pickups) if(dist(p.x,p.y,cx,cy)<3) { p.x=cx+3.5; p.y=cy+.5; }
+    const dir=compassDir(cx-CX,cy-CY); const dirName=dir[0].toUpperCase()+dir.slice(1);
+    const s=addStruct('shrine',cx,cy,'world',{key:'sh'+k});
+    shrines.push({key:'sh'+k,name:`Shrine of the ${dirName} Wind`,x:cx+.5,y:cy+.5,tier:pickIsl.tier,isl:pickIsl.id,s,trial:false});
+    pickIsl.shrine=shrines[shrines.length-1];
+  }
+}
+function shrineAttuned(sh){ return G.ext.shrines.includes(sh.key); }
+function shrineInteract(bd){
+  for(const sh of shrines){ const d=dist(sh.x,sh.y,P.x,P.y); if(d<bd+.5){
+    if(shrineAttuned(sh)) return {kind:'extra',label:`${sh.name} (attuned)`,fn:()=>toast(`✨ The ${sh.name} hums with your Storm Seal.`),d};
+    if(sh.trial) return {kind:'extra',label:'Defeat the guardians!',fn:()=>{},d};
+    return {kind:'extra',label:`Touch the ${sh.name}`,fn:()=>startTrial(sh),d}; } }
+  return null;
+}
+function startTrial(sh){
+  sh.trial=true; const t=Math.max(2,sh.tier); const types=CAMP_TYPES[t][0].concat(CAMP_TYPES[t][1]); const mult=1+Math.max(0,dist(sh.x,sh.y,CX,CY)-260)/260;
+  toast(`🌀 The ${sh.name} awakens! Its guardians rise to test you.`,'red'); sfx('boom'); shake=1;
+  const n=4+t;
+  for(let k=0;k<n;k++){ const a=k/n*6.283; const p=nearestWalkable(sh.x+Math.cos(a)*5,sh.y+Math.sin(a)*5,3); const e=spawnEnemy(types[k%types.length],p.x,p.y,{summoned:true,mult}); e.shrine=sh.key; e.state='chase'; }
+  const p=nearestWalkable(sh.x+2,sh.y-2,3); const g=spawnEnemy(FORT_BOSS[Math.min(5,Math.max(2,t))],p.x,p.y,{summoned:true,chief:true,name:'Shrine Guardian',mult}); g.shrine=sh.key; g.state='chase';
+}
+function updateShrines(dt){
+  for(const sh of shrines){ if(!sh.trial) continue;
+    const alive=enemies.some(e=>e.shrine===sh.key&&!e.dead);
+    if(!P.alive||dist(P.x,P.y,sh.x,sh.y)>45){ sh.trial=false; for(const e of enemies) if(e.shrine===sh.key) e.dead=true; enemies=enemies.filter(e=>!e.dead); if(P.alive) toast(`The ${sh.name} falls silent. Return to try its trial again.`); continue; }
+    if(!alive){ sh.trial=false; G.ext.shrines.push(sh.key); const t=sh.tier;
+      const loot={coins:60+t*40,potion:2,stardust:2+t,diamond:1}; const parts=[]; for(const k in loot){ give(k,loot[k]); parts.push(`${loot[k]} ${k==='coins'?'🪙':ITEMS[k].i}`); }
+      gainXP(150+t*80); burst(sh.x,sh.y,'#9ff0ff',40,4); sfx('level'); shake=.8;
+      toast(`🌀 Storm Seal claimed from the ${sh.name}! (${G.ext.shrines.length}/5) · ${parts.join(', ')}`,'gold'); questEvent('shrine',{}); saveGame(); }
+  }
+}
+function drawShrine(s,cx,cy){
+  const g=ctx; const sh=shrines.find(x=>x.key===s.data.key); const on=sh&&shrineAttuned(sh); const act=sh&&sh.trial;
+  ell(g,cx,cy,34,17,'rgba(0,0,0,.18)');
+  for(let k=0;k<4;k++){ const a=k/4*6.283+.785; const px=cx+Math.cos(a)*24, py=cy+Math.sin(a)*12; g.fillStyle='#9a9eb0'; g.fillRect(px-3,py-30,6,30); g.fillStyle='#c8ccd8'; g.fillRect(px-4,py-33,8,4); }
+  iso3(g,s.x+.1,s.y+.1,.8,.8,0,0,10,'#d8dce8','#a8acbc','#888c9c');
+  const bob=Math.sin(G.t*2)*4; const col=on?'#7ff0ff':act?'#ff9a5a':'#8a90b0';
+  if(on||act){ g.globalAlpha=.25+Math.sin(G.t*3)*.1; g.fillStyle=col; g.fillRect(cx-8,cy-260,16,250); g.globalAlpha=1; }
+  circ(g,cx,cy-40+bob,16,on?'rgba(127,240,255,.25)':'rgba(140,140,180,.15)');
+  poly(g,[cx,cy-62+bob,cx+11,cy-40+bob,cx,cy-20+bob,cx-11,cy-40+bob],col,'#fff',1.5);
+  for(let k=0;k<3;k++){ const a=G.t*1.5+k*2.09; circ(g,cx+Math.cos(a)*20,cy-40+bob+Math.sin(a)*7,2.5,col); }
+  if(!on&&!act){ g.font='bold 12px system-ui'; g.textAlign='center'; g.fillStyle='#fff'; g.fillText('E',cx,cy-74+Math.sin(G.t*4)*2); }
+}
+// quests: the long road
+QUESTS.push(
+  {id:'m9a',kind:'main',title:'Friends Across the Sky',giver:'quill',pre:['m9'],obj:[{type:'villages',n:15,text:'Visit 15 villages across the sky'}],
+   offer:"Four shards, yes. But the Anchor is old and stubborn. The songs say it only wakes when the isles stand together. Travel the sky and set foot in <b>15 villages</b>. Let the whole world see the Skywright is coming.",
+   prog:"15 villages. Use your map (M), the village markers will guide you.",done:"I can feel the isles leaning toward you. Good. Now the hard part.",reward:{xp:600,coins:300,items:{potion:3}}},
+  {id:'m9b',kind:'main',title:'The Five Wind Shrines',giver:'quill',pre:['m9a'],obj:[{type:'shrines',n:5,text:'Claim Storm Seals from the 5 Wind Shrines'}],
+   offer:"Five ancient <b>Wind Shrines</b> stand on far-flung isles, one toward each wind. Each holds a <b>Storm Seal</b>. Touch a shrine and its guardians will rise to test you. Beat them and the seal is yours. Bring all five.",
+   prog:"Five shrines, five seals. Follow the gold arrow, it points to the nearest one.",done:"Five seals! The Anchor will feel those from a hundred isles away.",reward:{xp:1200,coins:500,items:{stardust:6}}},
+  {id:'m9c',kind:'main',title:'Proof of Strength',giver:'quill',pre:['m9b'],obj:[{type:'forts',n:2,text:'Conquer 2 boss fortresses'}],
+   offer:"Last trial. The Warlord's lieutenants hold great <b>fortresses</b> across the sky. Break <b>two</b> of them. When their keeps fall, the storm itself will know you are coming.",
+   prog:"Two fortresses. Destroy every watchpost, then the boss in the keep.",done:"Two fortresses fallen! Skywright, you are ready. Truly ready.",reward:{xp:1500,coins:700,items:{potion:4}}}
+);
+for(const q of QUESTS) QMAP[q.id]=q;
+QMAP.m10.pre=['m9c'];
+QMAP.m10.offer="Shards, seals, friends and fallen fortresses: everything the Anchor asked for. The <b>Sky Anchor</b> plinth stands on the south edge of Petalmoor, facing the storm. Place the four shards in it and it will build a bridge no storm can break. Then... the Warlord. Prepare well, Skywright.";
+QMAP.m9.done="All four shards! But the Anchor needs more than shards. Listen closely...";
+function nearestUnvisitedVillage(){ const s=new Set(G.ext.visited); let b=null,bd=1e9; for(const v of villages){ if(s.has(v.isl)) continue; const d=dist(v.x,v.y,P.x,P.y); if(d<bd){bd=d;b=v;} } return b?{x:b.x,y:b.y}:null; }
+function nearestShrine(){ let b=null,bd=1e9; for(const sh of shrines){ if(shrineAttuned(sh)) continue; const d=dist(sh.x,sh.y,P.x,P.y); if(d<bd){bd=d;b=sh;} } return b?{x:b.x,y:b.y}:null; }
+function nearestFort(){ let b=null,bd=1e9; for(const f of forts){ if(f.cleared||f.ground) continue; const d=dist(f.x,f.y,P.x,P.y); if(d<bd){bd=d;b=f;} } return b?{x:b.x,y:b.y}:null; }
+// ===================== DIAMONDS & THE DIAMOND SWORD =====================
+// Diamond ore is rare: only on dangerous (4-5 star) isles and in the far east of the Gloomlands. Needs an Iron Pickaxe.
+ITEMS.crystal.i='🧊';
+Object.assign(ITEMS,{
+  diamond:{n:'Diamond',i:'💎',sell:40},
+  diamond_sword:{n:'Diamond Sword',i:'🗡️',gear:'weapon',dmg:70},
+});
+WEAPON_COL.diamond_sword='#b9f6ff';
+DECO.diamond={hp:28,tool:'pick',tier:3,drops:{diamond:[1,1],crystal:[0,1]},solid:true,regrow:900};
+RECIPES.push({id:'diamond_sword',st:'forge',cost:{diamond:10,crystal:15,iron:20,stardust:5},minLvl:15});
+function genDiamonds(){
+  const r=mulberry32(SEED+9001);
+  const place=(isl,tries)=>{ for(let t=0;t<tries;t++){ const a=r()*6.283, d=r()*isl.r*.8; const x=Math.floor(isl.x+Math.cos(a)*d), y=Math.floor(isl.y+Math.sin(a)*d);
+      if(!inB(x,y)||islandOf[idx(x,y)]!==isl.id||!isLand(x,y)||tiles[idx(x,y)]===T.PATH||structAt(x,y)||voidNeighbor(x,y)) continue; const old=decoAt(x,y); if(old) removeDeco(old); return addDeco('diamond',x,y); } return null; };
+  for(const isl of islands){ if(isl.story||isl.village||isl.kind==='ground'||isl.tier<4) continue; if(r()<(isl.tier>=5?.4:.22)) place(isl,20); }
+  if(groundIsl){ for(let k=0;k<30;k++){ const x=Math.floor(GX+GRX*(.1+r()*.8)), y=Math.floor(GY+(r()-.5)*GRY*1.6); if(!inB(x,y)||islandOf[idx(x,y)]!==groundIsl.id||!isLand(x,y)||tiles[idx(x,y)]===T.RUIN||structAt(x,y)||voidNeighbor(x,y)) continue; const old=decoAt(x,y); if(old) removeDeco(old); addDeco('diamond',x,y); } }
+}
+function drawDiamondOre(d){ const [x,y]=S(d.x+.5,d.y+.5); ell(ctx,x,y+1,14,6,'rgba(0,0,0,.22)');
+  poly(ctx,[x-13,y,x-9,y-13,x+2,y-18,x+12,y-9,x+13,y,x,y+4],'#5e6070'); poly(ctx,[x-9,y-13,x+2,y-18,x+12,y-9,x+1,y-6],'#7a7c8c');
+  const gems=[[-5,-9,5],[4,-12,6],[7,-4,4]]; for(const [ox,oy,s] of gems){ poly(ctx,[x+ox,y+oy-s,x+ox+s*.8,y+oy,x+ox,y+oy+s*.7,x+ox-s*.8,y+oy],'#c8f8ff','#ffffff',1); poly(ctx,[x+ox,y+oy-s,x+ox+s*.8,y+oy,x+ox,y+oy],'#e8feff'); }
+  if(Math.sin(G.t*3+d.x)>.92) circ(ctx,x+4,y-16,2.2,'#fff'); }
 // ===================== MAIN =====================
 function rle(arr){ let out=[],cur=arr[0],n=0; for(let i=0;i<arr.length;i++){ if(arr[i]===cur) n++; else { out.push(n); cur=arr[i]; n=1; } } out.push(n); return {f:arr[0],r:out}; }
 function unrle(o,arr){ let v=o.f,p=0; for(const n of o.r){ arr.fill(v,p,p+n); p+=n; v=v?0:1; } }
@@ -2742,7 +2866,7 @@ function update(dt){
   if(G.day!==prevDay){ prevDay=G.day; toast(`☀ Day ${G.day} begins.`); saveGame(); }
   if(G.time>.6&&duskWarned!==G.day){ duskWarned=G.day; if(G.day===1) toast('🌇 Dusk. The first night is calm, but from tomorrow <b>Gloomlings</b> hunt in the dark. Torches and campfires burn them.'); else if(G.day===2) toast('🌙 Night falls. Stay near light or keep moving!','red'); }
   updatePlayer(dt); updateNPCs(dt); updateEnemies(dt); updateProjectiles(dt); updateEffects(dt); updateStructs(dt);
-  updateCamps(dt); updateNight(dt); updateRaid(dt); updateBossTrigger(); updateRegrow(dt); updateExtras(dt); updateGround(dt);
+  updateCamps(dt); updateNight(dt); updateRaid(dt); updateBossTrigger(); updateRegrow(dt); updateExtras(dt); updateGround(dt); updateShrines(dt);
   for(const d of shaking) d.shake-=dt; shaking=shaking.filter(d=>d.shake>0);
   G.questT-=dt; if(G.questT<=0){ G.questT=.35; checkQuests(); updateTracker(); }
   G.autosaveT-=dt; if(G.autosaveT<=0){ G.autosaveT=45; saveGame(); }
