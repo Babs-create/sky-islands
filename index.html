@@ -1641,7 +1641,7 @@ function doInteract(){
   if(it.kind==='npc') return it.o.servant!=null?servantTalk(it.o):npcTalk(it.o);
   if(it.kind==='pickup'){ const p=it.o; p.taken=true; G.flags['pickup_'+p.id]=true; if(p.relic) collectRelic(p); else toast(`Picked up ${p.icon} ${p.name}`); sfx('pickup'); questEvent('pickup',{id:p.id}); return; }
   const s=it.o;
-  if(s.type==='chest'){ const l=s.data.loot||{}; const parts=[]; for(const k in l){ give(k,l[k]); parts.push(`${l[k]} ${k==='coins'?'🪙':ITEMS[k].i}`);} removeStruct(s); sfx('coin'); burst(s.x+.5,s.y+.5,'#ffd040',16); toast('Loot: '+parts.join(', '),'gold'); if(s.data.camp) G.flags['chest_'+s.data.camp]=true; if(s.data.special) {G.flags[s.data.special]=true; questEvent('pickup',{id:s.data.special});} saveGame(); }
+  if(s.type==='chest'){ const l=s.data.loot||{}; const parts=[]; for(const k in l){ give(k,l[k]); parts.push(`${l[k]} ${k==='coins'?'🪙':ITEMS[k].i}`);} removeStruct(s); if(typeof netChestOpened==='function'&&NET.conns.length) netChestOpened(s); sfx('coin'); burst(s.x+.5,s.y+.5,'#ffd040',16); toast('Loot: '+parts.join(', '),'gold'); if(s.data.camp) G.flags['chest_'+s.data.camp]=true; if(s.data.special) {G.flags[s.data.special]=true; questEvent('pickup',{id:s.data.special});} saveGame(); }
   else if(s.type==='farm'){ const c=s.data;
     if(!c.crop){ if(P.inv.seeds>0){ P.inv.seeds--; c.crop='wheat'; c.t=0; sfx('pluck'); floatText(s.x+.5,s.y+.5,'Planted!','#afa'); } else toast('You need seeds. Bushes sometimes drop them; merchants sell them.'); }
     else if(c.t>=90){ c.crop=null; c.t=0; give('wheat',3); const sd=rndi(0,2); if(sd) give('seeds',sd); floatText(s.x+.5,s.y+.5,`+3 🌾${sd?` +${sd} 🌱`:''}`,'#fff'); sfx('pickup'); questEvent('farm',{}); }
@@ -2063,8 +2063,8 @@ function renderPanel(tab){
     cv.onmouseup=cv.onmouseleave=()=>{ drag=null; };
     $('bmCenter').onclick=e=>{ e.preventDefault(); BM.cx=P.x; BM.cy=P.y; redraw(); };
   } else if(panelOpen==='shop'){
-    t.textContent='Trading'; let h=`<div style="margin-bottom:8px">Your coins: <b style="color:#f2c94c">🪙 ${P.coins}</b></div><h3>Buy</h3><div class="stn">Merchants talk to each other: every time you buy something, its price goes up a little (about 8%) at every shop.</div><div class="grid">`;
-    SHOP.buy.forEach((s,i)=>{ const it=ITEMS[s.it]; const pr=shopPrice(i), n=(G.ext.shopBought||{})[s.it]||0; h+=`<div class="card"><div class="big">${it.i}</div><div style="flex:1"><div class="nm">${it.n} x${s.q}</div><div class="ds">${it.heal?'Heals '+it.heal+' · ':''}${n?`<span style="color:#ffb080">Bought ${n}× · was ${s.p} 🪙</span>`:'Base price'}</div><button class="btn" ${P.coins>=pr?'':'disabled'} onclick="buy(${i})">Buy · ${pr} 🪙</button></div></div>`; });
+    t.textContent='Trading'; let h=`<div style="margin-bottom:8px">Your coins: <b style="color:#f2c94c">🪙 ${P.coins}</b></div><h3>Buy</h3><div class="stn">Merchants talk to each other: every time you buy something, its price goes up a little (about 8%) at every shop. Pay ${SHOP_RESET_COST} 🪙 to reset an item back to its base price.</div><div class="grid">`;
+    SHOP.buy.forEach((s,i)=>{ const it=ITEMS[s.it]; const pr=shopPrice(i), n=(G.ext.shopBought||{})[s.it]||0; h+=`<div class="card"><div class="big">${it.i}</div><div style="flex:1"><div class="nm">${it.n} x${s.q}</div><div class="ds">${it.heal?'Heals '+it.heal+' · ':''}${n?`<span style="color:#ffb080">Bought ${n}× · was ${s.p} 🪙</span>`:'Base price'}</div><button class="btn" ${P.coins>=pr?'':'disabled'} onclick="buy(${i})">Buy · ${pr} 🪙</button>${n?`<button class="btn alt" style="margin-top:4px;font-size:12px" title="Set this item back to ${s.p} 🪙" ${P.coins>=SHOP_RESET_COST?'':'disabled'} onclick="resetPrice(${i})">↺ Reset price · ${SHOP_RESET_COST} 🪙</button>`:''}</div></div>`; });
     h+='</div><h3>Sell</h3><div class="grid">';
     const sell=Object.keys(P.inv).filter(k=>P.inv[k]>0&&ITEMS[k]&&ITEMS[k].sell);
     if(!sell.length) h+='<div style="color:#9aa8cc">Nothing to sell.</div>';
@@ -2085,6 +2085,8 @@ function craft(id){
   payCost(r.cost); give(id,r.qty||1); sfx('build'); toast(`Crafted ${it.i} ${it.n}${r.qty>1?' x'+r.qty:''}`); checkQuests(); renderPanel();
 }
 function shopPrice(i){ const s=SHOP.buy[i]; const n=((G.ext&&G.ext.shopBought)||{})[s.it]||0; return Math.max(s.p+n,Math.round(s.p*Math.pow(1.08,n))); }
+const SHOP_RESET_COST=5;
+function resetPrice(i){ const s=SHOP.buy[i]; const b=G.ext.shopBought||{}; if(!b[s.it]||P.coins<SHOP_RESET_COST) return; P.coins-=SHOP_RESET_COST; delete b[s.it]; sfx('coin'); toast(`↺ ${ITEMS[s.it].n} is back to ${s.p} 🪙`); renderPanel(); }
 function buy(i){ const s=SHOP.buy[i]; const pr=shopPrice(i); if(P.coins<pr) return; P.coins-=pr; give(s.it,s.q); G.ext.shopBought=G.ext.shopBought||{}; G.ext.shopBought[s.it]=(G.ext.shopBought[s.it]||0)+1; sfx('coin'); renderPanel(); }
 function sell(k,n){ n=Math.min(n,P.inv[k]||0); if(n<=0) return; P.inv[k]-=n; P.coins+=n*ITEMS[k].sell; sfx('coin'); renderPanel(); }
 
@@ -3019,7 +3021,7 @@ function drawServantMarks(){ for(const n of npcs){ if(n.servant==null) continue;
 // ===================== ONLINE: FRIEND CODES =====================
 // Peer-to-peer play through PeerJS (WebRTC). Your friend code is your PeerJS id. Whoever you join is the host and relays to everyone.
 // Works when the game is on its own website (for example GitHub Pages). Sandboxed previews block the connection.
-const NET={peer:null,conns:[],host:null,isHost:false,code:null,name:null,players:{},status:'offline',err:'',sendT:0,chat:[],libLoading:false};
+const NET={peer:null,conns:[],host:null,isHost:false,code:null,name:null,players:{},status:'offline',err:'',sendT:0,chat:[],libLoading:false,chestsGone:[]};
 const NET_CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function netCfg(){ try{ return JSON.parse(localStorage.getItem('skywright_net_cfg')||'null'); }catch(e){ return null; } }
 function netLS(k,v){ try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v); }catch(e){ return null; } }
@@ -3060,6 +3062,7 @@ function netSetup(c,incoming){
     if(!NET.conns.includes(c)) NET.conns.push(c); if(incoming) NET.isHost=true;
     netSend(c,{t:'hello',id:NET.peer.id,name:netMyName(),...netMe()});
     const myC=netMyCastles(); if(myC.length) netSend(c,{t:'castles',id:NET.peer.id,list:myC});
+    if(NET.chestsGone.length) netSend(c,{t:'chests',id:NET.peer.id,list:NET.chestsGone.slice(-500)});
     if(incoming){ for(const [pid,p] of Object.entries(NET.players)) if(p.castles&&p.castles.length&&pid!==c.peer) netSend(c,{t:'castles',id:pid,list:p.castles}); }
     if(incoming){ const list=structs.filter(s=>s.alive&&s.owner==='player').slice(0,4000).map(s=>[s.type,s.x,s.y]); netSend(c,{t:'welcome',x:P.x,y:P.y,name:netMyName(),structs:list,players:Object.entries(NET.players).map(([id,p])=>({id,name:p.name}))}); }
     netRefresh(); });
@@ -3088,6 +3091,15 @@ function netApplyCastle(m,id,quiet){
   netApply(()=>{ applyCastle(isl,{id:isl.id,removed:(m.removed||[]).slice(0,500),remote:true},false); for(const e of enemies) if(islandAt(e.x,e.y)===isl&&!e.camp) e.dead=true; });
   if(!quiet) toast(`👥 ${netEsc(netWho(id))} turned <b>${netEsc(isl.name)}</b> into a castle!`,'gold');
 }
+function netChestOpened(s){ NET.chestsGone.push([s.x,s.y]); netShare({t:'chest',x:s.x,y:s.y}); }
+function netApplyChest(x,y,id,quiet){
+  x=x|0; y=y|0; if(!NET.chestsGone.some(p=>p[0]===x&&p[1]===y)) NET.chestsGone.push([x,y]);
+  const s=structAt(x,y); if(!s||!s.alive||s.type!=='chest') return;
+  removeStruct(s); lightCache=null;
+  // a quest chest opened by your friend still counts for your quest, but the loot went to them
+  if(s.data&&s.data.special) netApply(()=>questEvent('pickup',{id:s.data.special}));
+  if(!quiet&&dist(P.x,P.y,x,y)<30){ burst(x+.5,y+.5,'#ffd040',16); floatText(x+.5,y+.5,`📦 ${netWho(id)} looted it`,netColor(id),12); }
+}
 function netMyCastles(){ return (G.ext.castles||[]).map(r=>({id:r.id,removed:r.removed||[]})); }
 function netSend(c,m){ try{ if(c.open) c.send(m); }catch(e){} }
 function netBroadcast(m){ m.id=m.id||(NET.peer&&NET.peer.id); for(const c of NET.conns) netSend(c,m); }
@@ -3107,6 +3119,8 @@ function netOnData(c,m){
     case 'kill': netApplyKill(m,id); break;
     case 'clear': netApplyClear(m,id); break;
     case 'castle': netApplyCastle(m,id,false); break;
+    case 'chest': netApplyChest(m.x,m.y,id,false); break;
+    case 'chests': for(const p of (m.list||[]).slice(0,500)) if(Array.isArray(p)) netApplyChest(p[0],p[1],id,true); break;
     case 'castles': if(NET.players[id]) NET.players[id].castles=(m.list||[]).slice(0,100); for(const r of (m.list||[]).slice(0,100)) netApplyCastle(r,id,true); if((m.list||[]).length) toast(`👥 You can see ${netEsc(netWho(id))}'s castle${m.list.length>1?'s':''} (👑 on the map).`); break;
     case 'cgate': { const s=structAt(m.x,m.y); if(s&&s.type==='cwall'){ const isl=islandAt(m.x+.5,m.y+.5); removeStruct(s); if(isl&&isl.castle&&isl.castle.remote) isl.castle.removed.push([m.x,m.y]); } break; }
     case 'demo': { const s=structAt(m.x,m.y); if(s&&s.owner==='remote'){ removeStruct(s); lightCache=null; } break; }
