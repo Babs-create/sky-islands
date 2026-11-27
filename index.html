@@ -441,7 +441,6 @@ const FORT_BOSS_NAMES=['Warlord Kragg','Queen Bramblefang','The Iron Baron','Old
 const CAMP_TYPES={1:[['scrapper','slinger'],['scrapper','scrapper','slinger']],2:[['thornback','raider'],['raider','slinger','raider']],3:[['sporeling','brute','shaman'],['sporeling','sporeling','brute']],4:[['golem','shaman'],['golem','stormguard','shaman']],5:[['stormguard','golem','brute'],['stormguard','shaman','stormguard']]};
 
 function genWorld(){
-  if(typeof G!=='undefined'&&G.gameMode==='empire'){ genEmpireWorld(); return; }
   const r = mulberry32(SEED);
   tiles.fill(0); islandOf.fill(-1); decoGrid.fill(-1); structGrid.fill(-1);
   forts=[]; decos=[]; structs=[]; camps=[]; npcs=[]; pickups=[]; villages=[]; shaking=[]; islandByKey={};
@@ -899,6 +898,7 @@ function render(){
   for(const m of meteors) drawMeteor(m);
   // overlays above light
   for(const n of npcs) drawNPCLabel(n);
+  drawServantMarks();
   netLabels();
   for(const e of enemies) if(e.hp<e.maxHp||e.chief) drawEnemyBar(e);
   for(const c of camps) if(!c.cleared&&dist(c.x,c.y,P.x,P.y)<16) drawTotemBar(c.totem);
@@ -1638,7 +1638,7 @@ function findInteract(){
 function doInteract(){
   if(!P.alive) return; const it=findInteract(); if(!it) return;
   if(it.kind==='extra') return it.fn();
-  if(it.kind==='npc') return npcTalk(it.o);
+  if(it.kind==='npc') return it.o.servant!=null?servantTalk(it.o):npcTalk(it.o);
   if(it.kind==='pickup'){ const p=it.o; p.taken=true; G.flags['pickup_'+p.id]=true; if(p.relic) collectRelic(p); else toast(`Picked up ${p.icon} ${p.name}`); sfx('pickup'); questEvent('pickup',{id:p.id}); return; }
   const s=it.o;
   if(s.type==='chest'){ const l=s.data.loot||{}; const parts=[]; for(const k in l){ give(k,l[k]); parts.push(`${l[k]} ${k==='coins'?'🪙':ITEMS[k].i}`);} removeStruct(s); sfx('coin'); burst(s.x+.5,s.y+.5,'#ffd040',16); toast('Loot: '+parts.join(', '),'gold'); if(s.data.camp) G.flags['chest_'+s.data.camp]=true; if(s.data.special) {G.flags[s.data.special]=true; questEvent('pickup',{id:s.data.special});} saveGame(); }
@@ -1919,7 +1919,6 @@ function trackedQuest(){
 }
 let tgtCache={t:-9,v:null,q:null};
 function questTarget(){
-  if(G.gameMode==='empire') return empireTarget();
   const q=trackedQuest(); if(!q) return null;
   if(tgtCache.q===q.id&&G.t-tgtCache.t<1) return tgtCache.v;
   let v=null; const st=qs[q.id];
@@ -2040,7 +2039,7 @@ function renderPanel(tab){
     h+=sec('Gear',it=>!!it.gear)+sec('Food & Healing',it=>!!it.heal,true)+sec('Materials',it=>!it.gear&&!it.heal);
     b.innerHTML=h;
   } else if(panelOpen==='quests'){
-    t.textContent=G.gameMode==='empire'?'Empire':'Quest Log'; if(G.gameMode==='empire'){ empireLog(b); return; } let h='';
+    t.textContent='Quest Log'; let h='';
     const act=activeQuests(); const tq=trackedQuest();
     h+='<h3>Active</h3>'; if(!act.length) h+='<div style="color:#9aa8cc">No active quests. Look for <b style="color:#f2c94c">!</b> above villagers.</div>';
     for(const q of act){ const st=qs[q.id]; h+=`<div class="ql ${tq&&tq.id===q.id?'tr':''}"><div class="k">${q.kind==='tut'?'TUTORIAL':q.kind==='main'?'⭐ MAIN':'SIDE'}${st.st==='ready'?' · READY TO TURN IN':''}</div><div class="t">${q.title}</div>`;
@@ -2147,7 +2146,6 @@ function updateHUD(dt){
   updateHint();
 }
 function updateTracker(){
-  if(G.gameMode==='empire') return empireTracker();
   const q=trackedQuest(); const el=$('tracker');
   if(!q){ el.innerHTML='<div class="qt">No active quest</div><div class="ob">Look for <b style="color:#f2c94c">!</b> above villagers.</div>'; return; }
   const st=qs[q.id]; let h=`<div class="qk">${q.kind==='tut'?'TUTORIAL':q.kind==='main'?'⭐ MAIN QUEST':'SIDE QUEST'}</div><div class="qt">${q.title}</div>`;
@@ -2161,7 +2159,6 @@ function updateTracker(){
 function updateHint(){
   const q=trackedQuest(); const el=$('hint');
   let h=null;
-  if(G.gameMode==='empire'){ h=empireHint(); if(h){ if(el.dataset.h!==h){ el.innerHTML=`<div class="ht">EMPIRE MODE</div>${h}`; el.dataset.h=h; } el.classList.remove('hidden'); } else el.classList.add('hidden'); return; }
   if(q&&q.kind==='tut'&&q.hint){ h=qs[q.id].st==='ready'?'Camp cleared! Open the loot chest with <kbd>E</kbd>, then return to <b>Elder Bram</b> in Hollowbrook.':q.hint; }
   if(G.buildMode&&q&&q.kind==='tut'&&!['t6','t7','t9'].includes(q.id)) h='Build mode: pick a structure below, click to place. <kbd>Right-click</kbd> demolishes. <kbd>B</kbd> exits.';
   if(h){ if(el.dataset.h!==h){ el.innerHTML=`<div class="ht">TUTORIAL · ${q.title.toUpperCase()}</div>${h}`; el.dataset.h=h; } el.classList.remove('hidden'); }
@@ -2485,6 +2482,7 @@ const ACH=[
   ['shrines','Windbearer','Claim all 5 Storm Seals',()=>G.ext.shrines.length>=5,1000],
   ['castle1','Lord of the Isle','Build your first castle',()=>G.ext.castles.length>=1,300],
   ['castle5','Sky Monarch','Own 5 castles',()=>G.ext.castles.length>=5,1500],
+  ['servants','Many Hands','Collect from a castle storehouse kept by servants',()=>(G.ext.srvCollected||0)>=1,400],
   ['isl50','Wanderer','Discover 50 islands',()=>G.ext.visited.length>=50,100],
   ['isl250','Explorer','Discover 250 islands',()=>G.ext.visited.length>=250,400],
   ['isl1000','Every Last Rock','Discover all 1,000 islands',()=>G.ext.visited.length>=1000,3000],
@@ -2557,18 +2555,14 @@ function renderJournal(t,tabs,body){
   else if(journalTab==='pets'){ h+=`<div class="stn">Find wild animals on wild islands and feed them their favorite food (press E next to them). Your active pet follows you and fights. Befriended: <b>${G.ext.pets.length} / ${Object.keys(PETS).length}</b></div><div class="grid">`;
     for(const k in PETS){ const pd=PETS[k]; const own=G.ext.pets.includes(k); h+=`<div class="card"><div class="big">${own?pd.i:'❔'}</div><div style="flex:1"><div class="nm">${own?pd.n:'Unknown pet'}</div><div class="ds">${own?pd.d:`${pd.rare?'Very rare. ':''}Lives in ${pd.biomes.map(b=>BIOMES[b].name).join(' or ')} areas${pd.rare?' on the most dangerous isles':''}. Loves ${ITEMS[pd.treat].n} (${pd.need}).`}</div>${own?`<button class="btn" ${G.ext.pet===k?'disabled':''} onclick="G.ext.pet='${k}';petEnt=null;renderPanel()">${G.ext.pet===k?'Active':'Make active'}</button>`:''}</div></div>`; } h+='</div>'; }
   else { const tiers={}; for(const id of G.ext.visited){ const t=islands[id].tier; tiers[t]=(tiers[t]||0)+1; }
-    h+=`<div class="stn">Islands discovered: <b>${G.ext.visited.length}</b> / ${islands.length}</div><div style="font-size:14px;line-height:2">Villages visited: ${villagesVisited()} / ${villages.length}<br>Boss fortresses conquered: ${forts.filter(f=>f.cleared&&!f.ground).length} / ${forts.filter(f=>!f.ground).length}<br>Castles owned: ${G.ext.castles.length}<br>Wind Shrines attuned: ${G.ext.shrines.length} / ${shrines.length}<br>Gloom Hearts destroyed: ${camps.filter(c=>c.heart&&!c.mother&&c.cleared).length} / 5<br>Camps cleared: ${camps.filter(c=>c.cleared&&!c.fort).length} / ${camps.filter(c=>!c.fort).length}<br>Bridge planks built: ${G.stats.bridges||0}<br>Structures built: ${G.stats.built}<br>Enemies defeated: ${G.stats.kills}<br>Bounties completed: ${G.ext.bountiesDone}<br>Balloons popped: ${G.ext.balloons}<br>Stardust collected: ${G.ext.stardust}</div>`; }
+    h+=`<div class="stn">Islands discovered: <b>${G.ext.visited.length}</b> / ${islands.length}</div><div style="font-size:14px;line-height:2">Villages visited: ${villagesVisited()} / ${villages.length}<br>Boss fortresses conquered: ${forts.filter(f=>f.cleared&&!f.ground).length} / ${forts.filter(f=>!f.ground).length}<br>Castles owned: ${G.ext.castles.length} (servants working: ${npcs.filter(n=>n.servant!=null).length})<br>Wind Shrines attuned: ${G.ext.shrines.length} / ${shrines.length}<br>Gloom Hearts destroyed: ${camps.filter(c=>c.heart&&!c.mother&&c.cleared).length} / 5<br>Camps cleared: ${camps.filter(c=>c.cleared&&!c.fort).length} / ${camps.filter(c=>!c.fort).length}<br>Bridge planks built: ${G.stats.bridges||0}<br>Structures built: ${G.stats.built}<br>Enemies defeated: ${G.stats.kills}<br>Bounties completed: ${G.ext.bountiesDone}<br>Balloons popped: ${G.ext.balloons}<br>Stardust collected: ${G.ext.stardust}</div>`; }
   body.innerHTML=h;
 }
 
 // extra pet spawns: own RNG so world layout stays identical for old saves
 function genExtraPets(){
-  const r=mulberry32((G.gameMode==='empire'?(G.empireSeed||12345)+777:SEED+555)>>>0);
+  const r=mulberry32((SEED+555)>>>0);
   const put=(type,x,y,rad)=>{ const p=nearestWalkable(x,y,rad||4); if(!p) return; critters.push({type,x:p.x,y:p.y,hx:p.x,hy:p.y,wt:0,tx:p.x,ty:p.y,walk:0,face:1}); };
-  if(G.gameMode==='empire'){
-    const home=islandByKey.home; put('fox',home.x+3,home.y-2); put('cat',home.x-3,home.y+2); put('turtle',home.x+2,home.y+3);
-    for(const isl of islands){ if(isl.capital||isl.r<5||r()>.3) continue; const cand=Object.keys(PETS).filter(k=>PETS[k].biomes.includes(isl.biome)&&(!PETS[k].rare||isl.tier>=4)); if(!cand.length) continue; put(cand[Math.floor(r()*cand.length)],isl.x+1,isl.y); }
-    return; }
   // Baby Sky Dragons: only on the most dangerous storm isles, and only a few
   const storms=islands.filter(i=>i.kind==='res'&&i.biome==='storm'&&i.tier>=4&&i.r>=5);
   let n=0; for(const isl of storms){ if(n>=4) break; if(r()<.35){ put('dragon',isl.x,isl.y+1); n++; } }
@@ -2903,6 +2897,7 @@ function castleCheck(isl){
   if(isl.village) return {ok:false,why:"Villages can't become castles"};
   if(isl.kind==='ground') return {ok:false,why:'The Gloomlands are too vast for a castle'};
   if(isl.boss) return {ok:false,why:'The storm will not allow it'};
+  if(isl.fortObj&&!isl.fortObj.cleared) return {ok:false,why:`Defeat ${isl.fortObj.bossName} and its fortress first`};
   if(camps.some(c=>c.isl===isl.id&&!c.cleared)) return {ok:false,why:'Clear the enemies on this island first'};
   if(!G.built.workbench) return {ok:false,why:'Build a Workbench first'};
   const cost=castleCost(isl); if(cnt('stone')<cost) return {ok:false,why:`Needs ${cost} stone (you have ${cnt('stone')})`,cost};
@@ -2912,7 +2907,7 @@ function castleAttempt(tx,ty){
   const isl=islandAt(tx+.5,ty+.5); const r=castleCheck(isl);
   if(!r.ok){ floatText(tx+.5,ty+.5,r.why,'#ffb0a0',12); sfx('error'); return; }
   G.mouse.down=false;
-  showOverlay(`<h2>🏰 Build a Castle?</h2><p>Turn <b>${isl.name}</b> into your castle for <b>${r.cost} stone</b>.</p><p style="font-size:14px">You get stone walls around the edge (with gates), defense towers that shoot enemies, and a keep you can rest in that works as a Workbench. Nothing hostile will spawn there at night.</p><div class="btns"><button class="btn" id="cYes">Build it (${r.cost} 🪨)</button><button class="btn alt" id="cNo">Cancel</button></div>`);
+  showOverlay(`<h2>🏰 Build a Castle?</h2><p>Turn <b>${isl.name}</b> into your castle for <b>${r.cost} stone</b>.</p><p style="font-size:14px">You get stone walls around the edge (with gates), defense towers that shoot enemies, and a keep you can rest in that works as a Workbench. Nothing hostile will spawn there at night.</p>${isl.fortObj?`<p style="font-size:14px;color:#ffe08a">👑 This was a boss fortress. The castle comes with <b>${servantCount(isl)} servants</b> who gather resources for you into the castle storehouse.</p>`:''}<div class="btns"><button class="btn" id="cYes">Build it (${r.cost} 🪨)</button><button class="btn alt" id="cNo">Cancel</button></div>`);
   $('cYes').onclick=()=>{ closeOverlay(); const rr=castleCheck(isl); if(!rr.ok){ toast(rr.why); return; } P.inv.stone-=rr.cost; const rec={id:isl.id,removed:[]}; G.ext.castles.push(rec); applyCastle(isl,rec,true); };
   $('cNo').onclick=closeOverlay;
 }
@@ -2923,7 +2918,7 @@ function applyCastle(isl,rec,fresh){
   const isEdge=(x,y)=>[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>!set.has((x+dx)+','+(y+dy)));
   const nearBridge=(x,y)=>{ for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const s=structAt(x+dx,y+dy); if(s&&STRUCTS[s.type].walk&&isVoidT(tileAt(x+dx,y+dy))) return true; } return false; };
   // clear the island: every tree, rock, plant and ore, plus leftover camp tents, fires, pillars and ruins
-  for(const [x,y] of all){ const i=idx(x,y); const d=decoAt(x,y); if(d) removeDeco(d); const st=structAt(x,y); if(st&&['tent','ccamp','pillar','ruin','vfarm'].includes(st.type)) removeStruct(st); if(tiles[i]===T.WATER) continue; tiles[i]=T.CASTLE; }
+  for(const [x,y] of all){ const i=idx(x,y); const d=decoAt(x,y); if(d) removeDeco(d); const st=structAt(x,y); if(st&&['tent','ccamp','pillar','ruin','vfarm','palisade','totem'].includes(st.type)) removeStruct(st); if(tiles[i]===T.WATER) continue; tiles[i]=T.CASTLE; }
   regrowQ=regrowQ.filter(q=>islandOf[idx(q.x,q.y)]!==isl.id);
   // towers at the four diagonals of the island
   const edges=all.filter(([x,y])=>tiles[idx(x,y)]!==T.WATER&&isEdge(x,y));
@@ -2939,12 +2934,13 @@ function applyCastle(isl,rec,fresh){
   if(!kp) for(let r=0;r<=isl.r&&!kp;r++) for(let dy=-r;dy<=r&&!kp;dy++)for(let dx=-r;dx<=r&&!kp;dx++){ const x=Math.floor(isl.x)+dx-1, y=Math.floor(isl.y)+dy-1; if(footprintFree(x,y,2,2)&&set.has(x+','+y)&&set.has((x+1)+','+(y+1))){ for(const [xx,yy] of [[x,y],[x+1,y],[x,y+1],[x+1,y+1]]){ const d=decoAt(xx,yy); if(d) removeDeco(d);} kp=[x,y]; } }
   if(kp){ isl.castleKeep=addStruct('ckeep',kp[0],kp[1],'castle',{}); for(const [dx,dy] of [[3,0],[-2,1],[0,3]]){ const x=kp[0]+dx, y=kp[1]+dy; if(set.has(x+','+y)&&!isEdge(x,y)&&footprintFree(x,y,1,1)&&!decoAt(x,y)){ addStruct(dx===3?'vcampfire':'banner',x,y,'castle',{}); } } }
   chunkCache.clear(); mapDirty=true; lightCache=null; for(const e of enemies) if(e.night&&islandAt(e.x,e.y)===isl) e.dead=true;
+  if(isl.fortObj&&!rec.remote) spawnServants(isl,rec,fresh);
   if(fresh&&typeof netShare==='function') netShare({t:'castle',isl:isl.id,removed:rec.removed||[]});
   if(fresh){ shake=1; sfx('level'); burst(isl.x,isl.y,'#d8d0c0',40,4); toast(`🏰 <b>${isl.name}</b> is now your castle!`,'gold'); G.stats.built++; saveGame(); }
 }
 function castleInteract(bd){
   const px=Math.floor(P.x),py=Math.floor(P.y);
-  for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){ const s=structAt(px+dx,py+dy); if(s&&s.type==='ckeep'){ const d=dist(s.x+1,s.y+1,P.x,P.y); if(d<bd+.8) return G.gameMode==='empire'?{kind:'extra',label:'Enter your keep (rest, market)',fn:()=>empireKeepMenu(s),d:Math.min(d,bd-.01)}:{kind:'extra',label:'Rest in your keep (set respawn)',fn:()=>{ P.spawn=s.id; P.hp=P.maxHp; toast('🏰 You rest in your keep. Respawn point set, health restored.'); sfx('eat'); },d:Math.min(d,bd-.01)}; } }
+  for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){ const s=structAt(px+dx,py+dy); if(s&&s.type==='ckeep'){ const d=dist(s.x+1,s.y+1,P.x,P.y); if(d<bd+.8) return {kind:'extra',label:'Rest in your keep (set respawn)',fn:()=>{ P.spawn=s.id; P.hp=P.maxHp; toast('🏰 You rest in your keep. Respawn point set, health restored.'); sfx('eat'); },d:Math.min(d,bd-.01)}; } }
   return null;
 }
 function demolishCastleWall(s){
@@ -2981,6 +2977,45 @@ function drawCastleGhost(tx,ty){
 }
 let castleGhostMsg=null;
 function drawCastleGhostMsg(){ if(!G.buildMode||BUILD_ORDER[G.buildSel]!=='castle'||!castleGhostMsg) return; const {msg,ok}=castleGhostMsg; ctx.font='bold 14px system-ui'; ctx.textAlign='center'; const w=ctx.measureText(msg).width; ctx.fillStyle='rgba(14,20,40,.85)'; ctx.fillRect(G.mouse.x-w/2-8,G.mouse.y-44,w+16,24); ctx.fillStyle=ok?'#b8ffb8':'#ffc0c0'; ctx.fillText(msg,G.mouse.x,G.mouse.y-27); }
+
+// ---------- castle servants: castles built on conquered boss fortresses come staffed
+const SERVANT_JOBS=[
+  {k:'wood',  n:'Woodcutter', look:'cap',   col:'#7a5a3a', make:{wood:4},            say:'The axes never rest, my liege.'},
+  {k:'mason', n:'Mason',      look:'helm',  col:'#8a8a92', make:{stone:5},           say:'Fine stone, cut and stacked.'},
+  {k:'farm',  n:'Farmhand',   look:'straw', col:'#c8a040', make:{wheat:2,berries:2}, say:'The castle gardens are doing well.'},
+  {k:'mine',  n:'Miner',      look:'helm',  col:'#5a5a6a', make:{iron:2},            say:'Iron from the deep rock below the keep.', minTier:2},
+  {k:'gem',   n:'Gem Cutter', look:'band',  col:'#4aa0c8', make:{crystal:1},         say:'Crystals, polished and ready.', minTier:3},
+  {k:'gold',  n:'Treasurer',  look:'elder', col:'#b08a2a', make:{coins:15},          say:'Tribute from the sky lanes, counted twice.', minTier:4},
+];
+const SERVANT_NAMES=['Bram','Tilda','Osric','Wren','Hale','Maud','Corin','Elsie','Garrick','Nell','Pim','Rowan'];
+const SERVANT_PERIOD=60, SERVANT_CAP=10; // one batch per minute of play, storehouse holds 10 batches per servant
+function servantCount(isl){ return Math.min(6,2+(isl.tier||1)); }
+function servantJobs(isl){ const t=isl.tier||1; return SERVANT_JOBS.filter(j=>!j.minTier||t>=j.minTier).slice(0,servantCount(isl)); }
+function spawnServants(isl,rec,fresh){
+  npcs=npcs.filter(n=>n.servant!==isl.id);
+  rec.store=rec.store||{}; if(rec.srvT==null) rec.srvT=SERVANT_PERIOD;
+  const k=isl.castleKeep; const cx=k?k.x+1:isl.x, cy=k?k.y+1:isl.y;
+  servantJobs(isl).forEach((j,i)=>{ const a=i/6*6.283+.5; const p=nearestWalkable(cx+Math.cos(a)*2.6,cy+Math.sin(a)*2.6,4)||{x:Math.floor(cx),y:Math.floor(cy)};
+    const nm=SERVANT_NAMES[(Math.floor(hash2(isl.id*7,13)*SERVANT_NAMES.length)+i*5)%SERVANT_NAMES.length];
+    npcs.push({id:'srv_'+isl.id+'_'+i,name:`${j.n} ${nm}`,x:p.x+.5,y:p.y+.5,hx:p.x+.5,hy:p.y+.5,tx:p.x+.5,ty:p.y+.5,wt:rnd(0,3),face:1,bob:0,isl:isl.key,col:j.col,look:j.look,lines:[j.say],servant:isl.id,job:j.k}); });
+  if(fresh) setTimeout(()=>toast(`👑 ${servantJobs(isl).length} servants have moved into <b>${isl.name}</b>. Talk to any of them to collect from the storehouse.`,'gold'),900);
+}
+function storeTotal(rec){ let n=0; for(const k in rec.store||{}) n+=rec.store[k]; return n; }
+function updateServants(dt){
+  for(const rec of G.ext.castles||[]){ const isl=islands[rec.id]; if(!isl||!isl.fortObj||rec.remote) continue;
+    rec.store=rec.store||{}; rec.srvT=(rec.srvT==null?SERVANT_PERIOD:rec.srvT)-dt; if(rec.srvT>0) continue; rec.srvT+=SERVANT_PERIOD;
+    for(const j of servantJobs(isl)) for(const it in j.make){ const cap=j.make[it]*SERVANT_CAP; rec.store[it]=Math.min(cap,(rec.store[it]||0)+j.make[it]); } }
+}
+function storeList(rec){ return Object.keys(rec.store||{}).filter(k=>rec.store[k]>0).map(k=>k==='coins'?`${rec.store[k]} 🪙`:`${rec.store[k]} ${ITEMS[k].i} ${ITEMS[k].n}`); }
+function servantTalk(n){
+  const isl=islands[n.servant]; const rec=isl&&isl.castle; if(!rec) return; sfx('talk');
+  const j=SERVANT_JOBS.find(j=>j.k===n.job)||SERVANT_JOBS[0]; const list=storeList(rec); const per=Object.keys(j.make).map(k=>k==='coins'?`${j.make[k]} 🪙`:`${j.make[k]} ${ITEMS[k].i}`).join(' + ');
+  const next=Math.ceil(rec.srvT||0);
+  const text=`${j.say} I bring in <b>${per}</b> every minute.<div class="qreward">🏰 Storehouse of ${isl.name}: ${list.length?list.join(', '):'empty for now'}</div><div style="font-size:12px;color:#9aa8cc">Next delivery in ${next}s. The storehouse fills up if you leave it too long, so come back to collect.</div>`;
+  const btns=[]; if(list.length) btns.push({label:'Collect everything 📦',fn:()=>{ for(const k in rec.store){ if(rec.store[k]>0) give(k,rec.store[k]); } toast(`📦 Collected from ${isl.name}: ${list.join(', ')}`,'gold'); rec.store={}; sfx('pickup'); G.ext.srvCollected=(G.ext.srvCollected||0)+1; closeDialog(); saveGame(); }});
+  btns.push({label:'Carry on',fn:closeDialog}); showDialog(n,text,btns);
+}
+function drawServantMarks(){ for(const n of npcs){ if(n.servant==null) continue; const isl=islands[n.servant]; if(!isl||!isl.castle||!storeTotal(isl.castle)) continue; if(dist(n.x,n.y,P.x,P.y)>14) continue; const [x,y]=S(n.x,n.y); ctx.font='16px system-ui'; ctx.textAlign='center'; ctx.fillText('📦',x,y-62+Math.sin(G.t*3+n.x)*2); } }
 // ===================== ONLINE: FRIEND CODES =====================
 // Peer-to-peer play through PeerJS (WebRTC). Your friend code is your PeerJS id. Whoever you join is the host and relays to everyone.
 // Works when the game is on its own website (for example GitHub Pages). Sandboxed previews block the connection.
@@ -3094,7 +3129,7 @@ function netDrawables(list,vb){ for(const [id,p] of Object.entries(NET.players))
 function netLabels(){ ctx.textAlign='center'; for(const [id,p] of Object.entries(NET.players)){ if(p.rx==null) continue; const [x,y]=S(p.rx,p.ry); if(x<-50||x>VW+50||y<-80||y>VH+80) continue; const nm=`${p.name} · Lv ${p.lvl||1}`; ctx.font='bold 11px system-ui'; const w=ctx.measureText(nm).width; ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(x-w/2-4,y-64,w+8,15); ctx.fillStyle=netColor(id); ctx.fillText(nm,x,y-53); if(p.maxHp) hpBarAt(x,y-46,30,clamp(p.hp/p.maxHp,0,1),'#5ae070'); } }
 function netMapDots(g,mp){ for(const [id,p] of Object.entries(NET.players)){ if(p.x==null) continue; const [x,y]=mp(p.x,p.y); g.fillStyle=netColor(id); g.strokeStyle='#000'; g.lineWidth=1.5; g.beginPath(); g.arc(x,y,4,0,6.283); g.fill(); g.stroke(); } }
 function renderOnline(t,tabs,body){
-  t.textContent='Play with Friends'; if(G.gameMode==='empire'){ body.innerHTML='<div class="stn">Online play is available in <b>Adventure</b> mode. Each Empire is its own world.</div>'; return; } netStart();
+  t.textContent='Play with Friends'; netStart();
   body.innerHTML=`<div id="netStatus" class="stn"></div>
   <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
    <div class="card" style="display:block"><div class="ds">YOUR FRIEND CODE</div><div id="netCode" style="font:800 34px ui-monospace,Menlo,monospace;letter-spacing:.18em;color:#f2c94c;margin:4px 0 8px">${netMyCode()}</div>
@@ -3124,114 +3159,6 @@ function netRefresh(){
   const pl=$('netPlayers'); if(pl) pl.innerHTML=`<div class="slot" style="display:inline-flex;margin:0 6px 6px 0"><span style="color:#f2c94c">●</span> ${netEsc(netMyName())} (you) · Lv ${P.lvl}</div>`+Object.entries(NET.players).map(([id,p])=>`<div class="slot" style="display:inline-flex;margin:0 6px 6px 0"><span style="color:${netColor(id)}">●</span> ${netEsc(p.name)} · Lv ${p.lvl||1}</div>`).join('');
   const cl=$('netChatLog'); if(cl){ cl.innerHTML=NET.chat.join('<br>')||'<span style="color:#9aa8cc">No messages yet.</span>'; cl.scrollTop=cl.scrollHeight; }
 }
-// ===================== EMPIRE MODE =====================
-// A separate world of exactly 100 sky islands. No villages, no friendly folk: every island but your capital is held by enemies.
-// Clear an island, turn it into a castle, and collect income from every castle. Castle all 100 islands to complete your empire.
-const EMPIRE_KEY='skywright_empire_v1', EMPIRE_TOTAL=100;
-function saveKey(){ return G.gameMode==='empire'?EMPIRE_KEY:SAVE_KEY; }
-function hasSaveFor(mode){ try{ return !!localStorage.getItem(mode==='empire'?EMPIRE_KEY:SAVE_KEY); }catch(e){ return false; } }
-
-function genEmpireWorld(){
-  const r=mulberry32((G.empireSeed||12345)>>>0);
-  tiles.fill(0); islandOf.fill(-1); decoGrid.fill(-1); structGrid.fill(-1);
-  forts=[]; decos=[]; structs=[]; camps=[]; npcs=[]; pickups=[]; villages=[]; shaking=[]; islandByKey={}; islands=[];
-  shrines=[]; critters=[]; balloons=[]; meteors=[]; petEnt=null; groundIsl=null; skyLift=null; groundLift=null; landing=null; plinthPos=null;
-  const used=new Set();
-  const makeNm=(suffix)=>{ for(let t=0;t<60;t++){ const n=NAME_A[Math.floor(r()*NAME_A.length)]+NAME_B[Math.floor(r()*NAME_B.length)]; const full=suffix?n+' '+suffix:n; if(!used.has(full)){used.add(full);return full;} } return 'Isle '+used.size; };
-  const add=o=>{ o.id=islands.length; o.p=[r()*6.283,r()*6.283,r()*6.283]; islands.push(o); islandByKey[o.key]=o; return o; };
-  const fits=(x,y,rad,gap)=>{ if(x-rad*1.2<4||y-rad*1.2<4||x+rad*1.2>SKY_W-5||y+rad*1.2>SKY_W-5) return false; for(const o of islands) if(dist(x,y,o.x,o.y)<(rad+o.r)*1.16+gap) return false; return true; };
-  const home=add({key:'home',kind:'res',name:'Crownhold',x:CX,y:CY,r:12,tier:0,biome:'meadow',capital:true}); used.add('Crownhold');
-  // fill outward so every island sits a short bridge away from its neighbours
-  let R=30, tries=0;
-  while(islands.length<EMPIRE_TOTAL-5&&tries<300000){ tries++; if(tries%2500===0) R+=6;
-    const a=r()*6.283, d=Math.sqrt(r())*R; const x=Math.round(CX+Math.cos(a)*d), y=Math.round(CY+Math.sin(a)*d);
-    const rad=4+Math.floor(Math.pow(r(),1.3)*9); if(!fits(x,y,rad,3+r()*4)) continue;
-    add({key:'e'+islands.length,kind:'camp',x,y,r:rad}); }
-  let maxD=0; for(const o of islands) maxD=Math.max(maxD,dist(o.x,o.y,CX,CY));
-  // five great fortresses on the frontier
-  for(let k=0;k<5;k++){ let done=false; for(let t=0;t<40&&!done;t++){ const a=(k/5)*6.283+.4+(r()-.5)*.9, rad=17+Math.floor(r()*3); for(let d=maxD-25;d<maxD+60;d+=1.5){ const x=Math.round(CX+Math.cos(a)*d), y=Math.round(CY+Math.sin(a)*d); if(fits(x,y,rad,4)){ add({key:'f'+k,kind:'fortress',x,y,r:rad}); done=true; break; } } } }
-  // fill any shortfall (should be rare)
-  while(islands.length<EMPIRE_TOTAL&&tries<500000){ tries++; if(tries%2500===0) R+=6; const a=r()*6.283, d=Math.sqrt(r())*R; const x=Math.round(CX+Math.cos(a)*d), y=Math.round(CY+Math.sin(a)*d); const rad=4+Math.floor(r()*6); if(fits(x,y,rad,3+r()*4)) add({key:'e'+islands.length,kind:'camp',x,y,r:rad}); }
-  maxD=0; for(const o of islands) maxD=Math.max(maxD,dist(o.x,o.y,CX,CY));
-  // danger, biome and garrison for every island
-  let fi=0; const ranked=islands.filter(i=>!i.capital).sort((a,b)=>dist(a.x,a.y,CX,CY)-dist(b.x,b.y,CX,CY)); const cuts=[.25,.5,.7,.88];
-  ranked.forEach((isl,i)=>{ const q=i/ranked.length; isl.rankTier=1+cuts.filter(c=>q>=c).length; });
-  for(const isl of islands){ if(isl.capital) continue; const d=dist(isl.x,isl.y,CX,CY); const tier=isl.rankTier; isl.tier=isl.kind==='fortress'?Math.max(3,tier):tier;
-    isl.biome=procBiome(isl.tier,isl.x,isl.y,r); const mult=1+(d/(maxD+1))*.7;
-    if(isl.kind==='fortress'){ const nm=makeNm(FORT_WORDS[Math.floor(r()*FORT_WORDS.length)]); isl.name=nm; isl.fort={name:nm,boss:FORT_BOSS[Math.min(5,isl.tier)],bossName:FORT_BOSS_NAMES[(fi++*7)%FORT_BOSS_NAMES.length],posts:3+Math.floor(r()*2),mult}; }
-    else { const types=CAMP_TYPES[isl.tier][Math.floor(r()*2)]; const cname=makeNm(CAMP_WORDS[Math.floor(r()*CAMP_WORDS.length)]); isl.name=cname; const chief=isl.r>=7&&r()<.3;
-      isl.camp={name:cname,types,count:Math.min(7,1+isl.tier+(isl.r>=8?1:0)),chief:chief?types[types.length>2?2:0]:null,chiefName:chief?CHIEF_NAMES[Math.floor(r()*CHIEF_NAMES.length)]:null,mult}; } }
-  // carve
-  for(const isl of islands){ const Rf=a=>isl.r*(1+.08*Math.sin(3*a+isl.p[0])+.05*Math.sin(5*a+isl.p[1])+.025*Math.sin(9*a+isl.p[2])); isl.R=Rf; const b=Math.ceil(isl.r*1.2)+1; const gt=BIOMES[isl.biome].ground;
-    for(let y=isl.y-b;y<=isl.y+b;y++)for(let x=isl.x-b;x<=isl.x+b;x++){ if(!inB(x,y)) continue; const dx=x+.5-isl.x, dy=y+.5-isl.y; if(Math.hypot(dx,dy)<Rf(Math.atan2(dy,dx))){ tiles[idx(x,y)]=gt; islandOf[idx(x,y)]=isl.id; } } }
-  for(let y=GROUND_Y-10;y<W;y++)for(let x=0;x<W;x++){ const i=idx(x,y); if(tiles[i]===T.VOID) tiles[i]=T.SVOID; }
-  for(const isl of islands){ if(isl.biome!=='meadow') continue; const b=Math.ceil(isl.r*1.2)+1;
-    for(let y=isl.y-b;y<=isl.y+b;y++)for(let x=isl.x-b;x<=isl.x+b;x++){ if(inB(x,y)&&islandOf[idx(x,y)]===isl.id&&voidNeighbor(x,y)&&hash2(x,y)<.45) tiles[idx(x,y)]=T.SAND; } }
-  for(const isl of islands){ if(isl.camp) makeCamp(isl,r); if(isl.fort) makeFortress(isl,r); }
-  // resources
-  for(let y=0;y<SKY_W;y++)for(let x=0;x<SKY_W;x++){ const i=idx(x,y), t=tiles[i]; if(isVoidT(t)||t===T.WATER||t===T.PATH||structGrid[i]>=0) continue; const isl=islands[islandOf[i]]; if(!isl) continue;
-    const dC=dist(x+.5,y+.5,isl.x,isl.y); if(isl.camp&&dC<4.6) continue; const edge=voidNeighbor(x,y); let roll=r();
-    for(const [type,w0] of BIOMES[isl.biome].deco){ let w=w0*(isl.capital&&(type==='rock'||type==='tree')?1.6:1); if(type==='iron'&&isl.tier<1) w=0; if(type==='crystal'&&isl.biome!=='crystal'&&isl.biome!=='storm') w=0; if(roll<w){ if(!(edge&&DECO[type].solid)) addDeco(type,x,y); break; } roll-=w; } }
-  homeSpawn=nearestWalkable(home.x,home.y+3,5);
-  if(typeof genDiamonds==='function') genDiamonds();
-  if(typeof genExtraPets==='function') genExtraPets();
-}
-
-function startEmpire(){
-  const home=islandByKey.home; const rec={id:home.id,removed:[]}; G.ext.castles.push(rec); applyCastle(home,rec,false);
-  G.built.workbench=true; for(const [k,n] of [['crude_pick',1],['crude_axe',1],['club',1],['bread',5],['bandage',3],['wood',20],['stone',30]]) give(k,n);
-  if(home.castleKeep){ P.spawn=home.castleKeep.id; const p=nearestWalkable(home.castleKeep.x+1,home.castleKeep.y+3,4); P.x=p.x; P.y=p.y; }
-  G.ext.empT=60;
-  toast('👑 <b>Empire mode.</b> Every island out there belongs to the enemy. Clear them, turn them into castles, and rule all 100.','gold');
-}
-function empireIncome(){
-  const inc={stone:0,wood:0,coins:0,iron:0,crystal:0,glowcap:0,petal:0};
-  for(const rec of G.ext.castles){ const isl=islands[rec.id]; if(!isl) continue; const t=isl.tier||0;
-    inc.stone+=3+Math.round(isl.r*.6); inc.wood+=2; inc.coins+=2+t*2; if(t>=2) inc.iron+=1; if(t>=4) inc.crystal+=1;
-    if(isl.biome==='fungal') inc.glowcap+=1; if(isl.biome==='bloom') inc.petal+=1; }
-  return inc;
-}
-function updateEmpire(dt){
-  G.ext.empT=(G.ext.empT==null?60:G.ext.empT)-dt;
-  if(G.ext.empT<=0){ G.ext.empT=60; const inc=empireIncome(); const parts=[]; for(const k in inc) if(inc[k]>0){ give(k,inc[k]); parts.push(`${inc[k]} ${k==='coins'?'🪙':ITEMS[k].i}`); }
-    if(parts.length){ toast(`👑 Your ${G.ext.castles.length} castle${G.ext.castles.length>1?'s':''} sent tribute: ${parts.join(', ')}`); sfx('coin'); } }
-  if(!G.ext.empireWon&&G.ext.castles.length>=islands.length){ G.ext.empireWon=true; saveGame(); setTimeout(()=>showOverlay(`<h2>👑 The Sky Empire Is Complete 👑</h2><p>All ${islands.length} islands fly your banner. From Crownhold to the farthest fortress, the skies answer to one ruler: you.</p><p style="color:#f2c94c;font-weight:700">Day ${G.day} · Level ${P.lvl} · ${G.stats.kills} foes defeated · ${G.stats.built} things built</p><div class="btns"><button class="btn" id="eDone">Keep ruling</button></div>`),600); setTimeout(()=>{ const b=$('eDone'); if(b) b.onclick=closeOverlay; },700); }
-}
-let empTgt={t:-9,v:null};
-function empireTarget(){
-  if(G.t-empTgt.t<1) return empTgt.v;
-  let best=null,bd=1e9; for(const isl of islands){ if(isl.castle) continue; const d=dist(isl.x,isl.y,P.x,P.y); if(d<bd){bd=d;best=isl;} }
-  empTgt={t:G.t,v:best?{x:best.x+.5,y:best.y+.5,isl:best}:null}; return empTgt.v;
-}
-function empireTracker(){
-  const n=G.ext.castles.length, inc=empireIncome(), t=empireTarget(); const isl=t&&t.isl;
-  let h=`<div class="qk">👑 EMPIRE</div><div class="qt">Castles: ${n} / ${islands.length}</div><div class="bar" style="height:8px;margin:4px 0 6px"><div style="width:${n/islands.length*100}%;background:linear-gradient(90deg,#f2c94c,#ffe9a0)"></div></div>`;
-  h+=`<div class="ob" style="font-size:12px">Tribute every minute: ${['stone','wood','coins','iron','crystal'].filter(k=>inc[k]).map(k=>`+${inc[k]} ${k==='coins'?'🪙':ITEMS[k].i}`).join(' ')}</div>`;
-  if(isl){ const left=camps.filter(c=>c.isl===isl.id&&!c.cleared).length; h+=`<div class="other">Next: <b style="color:#fff">${isl.name}</b> ${'★'.repeat(isl.tier||1)}<br>${left?`☠ ${left===1?'Enemy camp':left+' enemy posts'} to clear first`:'✔ Cleared: ready to castle'} · ${castleCost(isl)} 🪨</div>`; }
-  $('tracker').innerHTML=h;
-}
-function empireHint(){ if(G.ext.castles.length>=4) return null;
-  return G.buildMode?'Pick <b>🏰 Castle</b> (last slot) and click a <b>cleared</b> island. The cost is shown on the cursor.':
-    'Follow the gold arrow to the nearest enemy island. Defeat its guards and smash the <b>totem</b>, then press <kbd>B</kbd>, choose <b>🏰 Castle</b> and click the island. Every castle pays you stone, wood and coins each minute. Your keep (<kbd>E</kbd>) has a market.'; }
-function empireLog(body){
-  const n=G.ext.castles.length; const fortN=forts.filter(f=>f.cleared).length;
-  let h=`<div class="stn">👑 Castles: <b style="color:#f2c94c">${n} / ${islands.length}</b> · Fortresses conquered: ${fortN} / ${forts.length} · Camps cleared: ${camps.filter(c=>c.cleared&&!c.fort).length} / ${camps.filter(c=>!c.fort).length}</div><h3>Nearest islands to take</h3>`;
-  const list=islands.filter(i=>!i.castle).sort((a,b)=>dist(a.x,a.y,P.x,P.y)-dist(b.x,b.y,P.x,P.y)).slice(0,10);
-  for(const isl of list){ const left=camps.filter(c=>c.isl===isl.id&&!c.cleared).length; h+=`<div class="ql"><div class="k">${isl.kind==='fortress'?'🏰 BOSS FORTRESS':'ENEMY ISLAND'} · ${'★'.repeat(isl.tier||1)}</div><div class="t">${isl.name}</div><div style="font-size:13px;color:#9aa8cc">${Math.round(dist(isl.x,isl.y,P.x,P.y))}m ${compassDir(isl.x-P.x,isl.y-P.y)} · ${left?`${left} enemy ${left>1?'posts':'camp'} left`:'cleared'} · castle cost ${castleCost(isl)} 🪨</div></div>`; }
-  body.innerHTML=h;
-}
-function empireKeepMenu(s){
-  showDialog({name:'Royal Steward'},`Welcome home, Your Majesty. Your empire holds <b>${G.ext.castles.length}</b> of ${islands.length} islands.`,
-    [{label:'Rest (set respawn, heal)',fn:()=>{ P.spawn=s.id; P.hp=P.maxHp; closeDialog(); toast('🏰 You rest in your keep. Respawn point set.'); sfx('eat'); }},{label:'🛒 Market',fn:()=>{ closeDialog(); openPanel('shop'); }},{label:'Close',fn:closeDialog}]);
-}
-// title: choose a mode
-function chooseMode(kind){
-  const card=(mode,title,desc)=>{ const has=hasSaveFor(mode); return `<div class="card" style="display:block;text-align:left"><div class="nm" style="font-size:18px">${title}</div><div class="ds" style="font-size:13px;margin:6px 0 10px">${desc}</div>
-    ${kind==='new'?`<button class="btn" data-m="${mode}">${has?'Start over':'Start'}</button>${has?' <span style="font-size:12px;color:#ffb080">Replaces your saved '+(mode==='empire'?'empire':'adventure')+'</span>':''}`:has?`<button class="btn" data-m="${mode}">Continue</button>`:'<span class="ds">No save yet</span>'}</div>`; };
-  showOverlay(`<h2>${kind==='new'?'New Game':'Continue'}</h2><div class="grid" style="grid-template-columns:1fr 1fr;gap:12px">${card('adventure','⚔ Adventure','The full story: villages and quests, a tutorial, Wind Shrines, fortresses, the Tempest Warlord and the Gloomlands below.')}${card('empire','👑 Empire','100 sky islands and only enemies. Clear each island, turn it into a castle, collect tribute, and rule all 100. No villages, no quests.')}</div><div class="btns"><button class="btn alt" id="mCancel">Cancel</button></div>`);
-  $('mCancel').onclick=closeOverlay;
-  document.querySelectorAll('#overlay [data-m]').forEach(b=>b.onclick=()=>{ const m=b.dataset.m; closeOverlay(); if(kind==='new') newGame(m); else loadGame(m); prevDay=G.day; duskWarned=G.time>.6?G.day:-1; });
-}
 // ===================== MAIN =====================
 function rle(arr){ let out=[],cur=arr[0],n=0; for(let i=0;i<arr.length;i++){ if(arr[i]===cur) n++; else { out.push(n); cur=arr[i]; n=1; } } out.push(n); return {f:arr[0],r:out}; }
 function unrle(o,arr){ let v=o.f,p=0; for(const n of o.r){ arr.fill(v,p,p+n); p+=n; v=v?0:1; } }
@@ -3240,32 +3167,28 @@ function saveGame(manual){
   if(G.mode!=='play') return;
   try{
     const sp=P.spawn!=null&&structs[P.spawn]&&structs[P.spawn].alive?[structs[P.spawn].x,structs[P.spawn].y]:null;
-    const data={v:1,mode:G.gameMode||'adventure',seed:G.empireSeed||0,P:{x:P.x,y:P.y,hp:P.hp,maxHp:P.maxHp,lvl:P.lvl,xp:P.xp,coins:P.coins,inv:P.inv,spawn:sp},
+    const data={v:1,P:{x:P.x,y:P.y,hp:P.hp,maxHp:P.maxHp,lvl:P.lvl,xp:P.xp,coins:P.coins,inv:P.inv,spawn:sp},
       G:{ext:G.ext,time:G.time,day:G.day,built:G.built,anchor:G.anchor,bossDead:G.bossDead,raidDone:G.raidDone,flags:G.flags,tracked:G.tracked,stats:G.stats,hintShown:G.hintShown,victory:G.victory},
       qs, camps:camps.map(c=>({k:c.key,cl:c.cleared,cd:c.chiefDead})),
       structs:structs.filter(s=>s.alive&&s.owner==='player').map(s=>[s.type,s.x,s.y,Math.round(s.hp),s.data]),
       pk:pickups.filter(p=>p.taken).map(p=>p.id), ex:rle(explored), exW:W};
-    localStorage.setItem(saveKey(),JSON.stringify(data));
+    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
     if(manual) toast('💾 Game saved.');
   }catch(e){ if(manual) toast('Could not save in this browser.'); }
 }
-function hasSave(){ return hasSaveFor('adventure')||hasSaveFor('empire'); }
+function hasSave(){ try{ return !!localStorage.getItem(SAVE_KEY); }catch(e){ return false; } }
 function freshWorld(){ genWorld(); chunkCache.clear(); enemies=[]; projectiles=[]; particles=[]; texts=[]; effects=[]; regrowQ=[]; lightCache=null; mapDirty=true; explored.fill(0); }
 function resetG(){ Object.assign(G,{time:.08,day:1,buildMode:false,buildSel:0,built:{},anchor:false,bossDead:false,boss:null,raid:{active:false,wave:0},raidDone:{},flags:{},tracked:null,dead:false,victory:false,nightT:5,campT:0,questT:0,autosaveT:45,hintShown:{},stats:{kills:0,built:0,bridges:0},fishing:null,balloonT:90,meteorNight:-1,meteorRoll:-1}); G.ext=freshExt(); }
-function newGame(mode){
-  G.gameMode=mode||'adventure'; if(G.gameMode==='empire') G.empireSeed=(Math.random()*1e9)>>>0;
+function newGame(){
   freshWorld(); resetG(); resetPlayer(); qs={};
-  if(G.gameMode==='empire') startEmpire();
   initCampEnemies();
   startGameUI();
-  if(G.gameMode!=='empire'){ startQuest(QMAP.t1); toast('Welcome to the Shattered Isles. Press <kbd>Esc</kbd> any time for controls.'); }
+  startQuest(QMAP.t1); toast('Welcome to the Shattered Isles. Press <kbd>Esc</kbd> any time for controls.');
   saveGame();
 }
-function loadGame(mode){
-  G.gameMode=mode||'adventure';
-  let d; try{ d=JSON.parse(localStorage.getItem(saveKey())); }catch(e){ d=null; }
-  if(!d){ newGame(G.gameMode); return; }
-  G.empireSeed=d.seed||0;
+function loadGame(){
+  let d; try{ d=JSON.parse(localStorage.getItem(SAVE_KEY)); }catch(e){ d=null; }
+  if(!d){ newGame(); return; }
   freshWorld(); resetG(); resetPlayer();
   Object.assign(P,d.P); P.spawn=null; P.alive=true; Object.assign(G,d.G); G.boss=null; G.raid={active:false,wave:0};
   G.ext=Object.assign(freshExt(),G.ext||{}); G.stats.bridges=G.stats.bridges||0; G.fishing=null;
@@ -3283,7 +3206,7 @@ function loadGame(mode){
   rebuildGloom();
   initCampEnemies();
   if(collides(P.x,P.y,.28)){ const p=nearestWalkable(P.x,P.y,6); P.x=p.x; P.y=p.y; }
-  startGameUI(); toast(G.gameMode==='empire'?`👑 Welcome back, Your Majesty. ${G.ext.castles.length} of ${islands.length} islands are yours.`:`Welcome back, Skywright. Day ${G.day}.`);
+  startGameUI(); toast(`Welcome back, Skywright. Day ${G.day}.`);
 }
 function startGameUI(){
   G.mode='play'; $('title').classList.add('hidden'); $('hud').classList.remove('hidden'); closeOverlay(); closePanel(); closeDialog();
@@ -3302,7 +3225,7 @@ function update(dt){
   if(G.day!==prevDay){ prevDay=G.day; toast(`☀ Day ${G.day} begins.`); saveGame(); }
   if(G.time>.6&&duskWarned!==G.day){ duskWarned=G.day; if(G.day===1) toast('🌇 Dusk. The first night is calm, but from tomorrow <b>Gloomlings</b> hunt in the dark. Torches and campfires burn them.'); else if(G.day===2) toast('🌙 Night falls. Stay near light or keep moving!','red'); }
   updatePlayer(dt); updateNPCs(dt); updateEnemies(dt); updateProjectiles(dt); updateEffects(dt); updateStructs(dt);
-  updateCamps(dt); updateNight(dt); updateRaid(dt); updateBossTrigger(); updateRegrow(dt); updateExtras(dt); updateGround(dt); updateShrines(dt); if(G.gameMode==='empire') updateEmpire(dt);
+  updateCamps(dt); updateNight(dt); updateRaid(dt); updateBossTrigger(); updateRegrow(dt); updateExtras(dt); updateGround(dt); updateShrines(dt); updateServants(dt);
   for(const d of shaking) d.shake-=dt; shaking=shaking.filter(d=>d.shake>0);
   G.questT-=dt; if(G.questT<=0){ G.questT=.35; checkQuests(); updateTracker(); }
   G.autosaveT-=dt; if(G.autosaveT<=0){ G.autosaveT=45; saveGame(); }
@@ -3320,8 +3243,11 @@ function frame(now){
 resize(); genWorld(); resetPlayer(); P.alive=false; for(let i=0;i<W*W;i++) explored[i]=0;
 prevDay=1;
 $('bContinue').classList.toggle('hidden',!hasSave());
-$('bNew').onclick=()=>chooseMode('new');
-$('bContinue').onclick=()=>{ const a=hasSaveFor('adventure'), e=hasSaveFor('empire'); if(a&&e) return chooseMode('continue'); loadGame(e?'empire':'adventure'); prevDay=G.day; duskWarned=G.time>.6?G.day:-1; };
+$('bNew').onclick=()=>{ const go=()=>{ closeOverlay(); newGame(); prevDay=G.day; duskWarned=-1; }; if(!hasSave()) return go();
+  showOverlay(`<h2>New Game</h2><p>Start a new adventure? This replaces your saved game.</p><div class="btns"><button class="btn" data-m="adventure">Start over</button><button class="btn alt" id="mCancel">Cancel</button></div>`);
+  $('mCancel').onclick=closeOverlay; document.querySelector('#overlay [data-m]').onclick=go; };
+try{ localStorage.removeItem('skywright_empire_v1'); }catch(e){}
+$('bContinue').onclick=()=>{ loadGame(); prevDay=G.day; duskWarned=G.time>.6?G.day:-1; };
 $('bHelp').onclick=()=>{ showOverlay(`<h2>How to Play</h2><p>You are a <b>Skywright</b>: a builder in a world shattered into floating islands. Gather, craft, build bridges between isles, help villagers, clear bandit camps, and recover four Sky Shards to face the Tempest Warlord. The tutorial walks you through everything step by step.</p>${helpHTML()}<div class="btns"><button class="btn" id="oClose">Got it</button></div>`); $('oClose').onclick=closeOverlay; };
 window.addEventListener('beforeunload',()=>saveGame());
 requestAnimationFrame(frame);
